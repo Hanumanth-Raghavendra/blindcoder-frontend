@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { useSpeechAPI } from "./hooks/useSpeechAPI";
 
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = "https://blindcoder-backend.onrender.com";
 
 export default function App() {
   const [code, setCode] = useState("");
