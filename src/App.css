@@ -1,0 +1,389 @@
+/* ==================================================== */
+/* 💻 1. MASTER LAPTOP & DESKTOP VIEWPORT LAYOUT        */
+/* ==================================================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #0a192f;
+  color: #fff;
+  font-family: "Segoe UI", sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#root, .app-layout {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+header {
+  background: #0d2137;
+  padding: 12px 24px;
+  border-bottom: 2px solid #00b4ff;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+header h1 {
+  color: #00b4ff;
+  font-size: 1.4rem;
+  letter-spacing: 2px;
+}
+
+header .subtitle {
+  color: #7a9abb;
+  font-size: 0.82rem;
+}
+
+.header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kb-hint {
+  background: #112240;
+  border: 1px solid #1e3a5f;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  color: #7a9abb;
+  white-space: nowrap;
+}
+
+.kb-hint kbd {
+  background: #1e3a5f;
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: #00b4ff;
+  font-family: monospace;
+}
+
+.main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.left-panel {
+  width: 55%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #1e3a5f;
+}
+
+.panel-title {
+  background: #0d2137;
+  padding: 7px 16px;
+  font-size: 0.75rem;
+  color: #00b4ff;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #1e3a5f;
+  flex-shrink: 0;
+}
+
+#code-area {
+  flex: 1;
+  background: #081624;
+  padding: 18px 20px;
+  font-family: "Courier New", monospace;
+  font-size: 0.95rem;
+  color: #e0f0ff;
+  border: none;
+  resize: none;
+  outline: none;
+  line-height: 1.75;
+  overflow-y: auto;
+}
+
+#prompt-section {
+  background: #0d2137;
+  border-top: 1px solid #1e3a5f;
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+#groq-input {
+  flex: 1;
+  background: #081624;
+  border: 1px solid #1e3a5f;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #fff;
+  font-size: 0.88rem;
+  outline: none;
+  transition: border 0.2s;
+}
+
+#groq-input:focus {
+  border-color: #00b4ff;
+}
+
+#groq-input::placeholder {
+  color: #445;
+}
+
+#btn-generate {
+  background: #7c3aed;
+  color: #fff;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#btn-generate:hover {
+  background: #6d28d9;
+}
+
+.right-panel {
+  width: 45%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#output-area {
+  flex: 1;
+  background: #050e1a;
+  padding: 18px 20px;
+  font-family: "Courier New", monospace;
+  font-size: 0.9rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.output-success {
+  color: #00ff88;
+}
+
+.output-error {
+  color: #ff4444;
+}
+
+.output-info {
+  color: #00b4ff;
+}
+
+.output-explain {
+  color: #f0c040;
+  margin-top: 12px;
+  border-top: 1px solid #1e3a5f;
+  padding-top: 10px;
+}
+
+#history-section {
+  background: #0a1a2e;
+  border-top: 1px solid #1e3a5f;
+  padding: 8px 14px;
+  max-height: 110px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+#history-section p {
+  font-size: 0.72rem;
+  color: #556;
+  margin-bottom: 5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+#history-list {
+  list-style: none;
+}
+
+#history-list li {
+  font-size: 0.8rem;
+  color: #7a9abb;
+  padding: 2px 0;
+  cursor: pointer;
+  border-bottom: 1px solid #0d2137;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#history-list li:hover {
+  color: #00b4ff;
+}
+
+#history-list li::before {
+  content: "\25B8 ";
+  color: #1e3a5f;
+}
+
+.controls {
+  background: #0d2137;
+  border-top: 2px solid #00b4ff;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+button {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+#btn-voice {
+  background: #00b4ff;
+  color: #0a192f;
+}
+
+#btn-voice.listening {
+  background: #ff4444;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+#btn-run {
+  background: #00cc66;
+  color: #0a192f;
+}
+
+#btn-read {
+  background: #1e5f8a;
+  color: #fff;
+}
+
+#btn-save {
+  background: #1e3a5f;
+  color: #ccc;
+}
+
+#btn-clear {
+  background: #1a1a2e;
+  color: #aaa;
+  border: 1px solid #1e3a5f;
+}
+
+#status-bar {
+  flex: 1;
+  background: #081624;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  color: #7a9abb;
+  border: 1px solid #1e3a5f;
+  min-width: 180px;
+}
+
+.audio-indicator {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+/* ==================================================== */
+/* 📱 2. STRICT TARGETED MOBILE SCREEN BREAKPOINT ONLY */
+/* ==================================================== */
+@media (max-width: 767px) {
+  /* This breakpoint applies ONLY to small mobile devices. */
+  /* iPad Pro (1024px) and iPad Air (820px) are left untouched! */
+  
+  body {
+    overflow-y: auto !important;
+  }
+
+  #root, .app-layout {
+    height: auto !important;
+    min-height: 100vh;
+    overflow: visible !important;
+  }
+
+  header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 12px;
+    gap: 6px;
+  }
+
+  .header-right {
+    display: none !important;
+  }
+
+  .main {
+    flex-direction: column !important;
+    overflow: visible !important;
+    height: auto !important;
+    padding: 10px;
+    gap: 12px;
+  }
+
+  .left-panel, .right-panel {
+    width: 100% !important;
+    height: auto !important;
+    border-right: none !important;
+    border-bottom: 2px solid #1e3a5f;
+  }
+
+  #code-area, #output-area {
+    height: 240px !important;
+    min-height: 240px !important;
+    overflow-y: auto !important;
+  }
+
+  .controls {
+    background: #0d2137;
+    padding: 12px;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  #status-bar {
+    width: 100% !important;
+    text-align: center;
+    margin-bottom: 2px;
+  }
+
+  button {
+    flex: 1 1 calc(50% - 6px) !important;
+    padding: 12px 6px !important;
+    font-size: 0.8rem !important;
+  }
+}
