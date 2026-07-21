@@ -426,6 +426,12 @@ export default function App() {
         <span className="subtitle">
           Voice-Driven IDE for Visually Impaired Developers
         </span>
+        <span
+          className="copyright"
+          style={{ color: "#7a9abb", fontSize: "0.85rem", marginLeft: "15px" }}
+        >
+          &copy; Hanumanth Raghavendra 2026
+        </span>
         <div className="header-right">
           <span className="kb-hint">
             Hold <kbd>Space</kbd> to speak &nbsp;|&nbsp; Double-tap{" "}
