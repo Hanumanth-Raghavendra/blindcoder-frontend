@@ -39,7 +39,7 @@ export default function App() {
       if (isTouchDevice) {
         // Mobile / Tablet Prompt Configuration
         speak(
-          "BlindCoder ready. Left pane: Hold to speak, double tap to read. Right pane: Tap to run, double tap to save, hold to clear.",
+          "BlindCoder ready. Top pane: Hold to speak, double tap to read. Bottom pane: Tap to run, double tap to save, hold to clear.",
         );
         setStatusBar(
           "Left: Hold=Speak, 2×Tap=Read | Right: Tap=Run, 2×Tap=Save, Hold=Clear",
