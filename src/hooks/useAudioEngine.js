@@ -66,7 +66,9 @@ export function useAudioEngine() {
   const speak = (text) => {
     window.speechSynthesis.cancel();
     var u = new SpeechSynthesisUtterance(text);
+    u.volume = 1.0;
     u.rate = 0.85;
+    u.pitch = 1.0;
     window.speechSynthesis.speak(u);
   };
 
