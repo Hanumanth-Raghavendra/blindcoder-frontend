@@ -4,7 +4,77 @@ import { useSpeechAPI } from "./hooks/useSpeechAPI";
 
 const BACKEND_URL = "https://blindcoder-backend.onrender.com";
 
+// ==================================================== */
+// 🚀 INTRO SPLASH COMPONENT (Opening Animation & Audio)
+// ==================================================== */
+function IntroSplash({ onComplete }) {
+  const [isFadingOut, setIsFadingOut] = useState(false);
+  const { initAudio, speak } = useAudioEngine();
+  const splashTriggered = useRef(false);
+
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      if (splashTriggered.current) return;
+      splashTriggered.current = true;
+      initAudio();
+
+      // Dynamically detect screen format boundary (Laptop vs iPad/Mobile)
+      const isTouchDevice = window.innerWidth <= 1024;
+
+      const welcomeMessage = isTouchDevice
+        ? "Blind-Coder ready.... Top pane: Hold to speak.. double tap to read.. Bottom pane: Tap to run.. double tap to save.. hold to clear."
+        : "Blind-Coder ready.... Hold Space to speak.. double tap space to read.. press enter to run.. double tap enter to save.. escape to clear.";
+
+      // Reduced speech speed parameter (rate: 0.85) to make the intro audio slower and clearer
+      speak(welcomeMessage, 0.85);
+
+      // Increased duration to 10500ms to accommodate the slower speech rate before fading out
+      const finishTimer = setTimeout(() => {
+        setIsFadingOut(true);
+        setTimeout(() => {
+          onComplete();
+        }, 800); // Matches CSS transition duration
+      }, 10500);
+
+      window.removeEventListener("mousedown", handleFirstInteraction);
+      window.removeEventListener("keydown", handleFirstInteraction);
+      return () => clearTimeout(finishTimer);
+    };
+
+    window.addEventListener("mousedown", handleFirstInteraction);
+    window.addEventListener("keydown", handleFirstInteraction);
+
+    return () => {
+      window.removeEventListener("mousedown", handleFirstInteraction);
+      window.removeEventListener("keydown", handleFirstInteraction);
+    };
+  }, [initAudio, speak, onComplete]);
+
+  return (
+    <div className={`splash-overlay ${isFadingOut ? "fade-out" : ""}`}>
+      <div className="splash-content">
+        <div className="pulse-ring"></div>
+        <h1 className="splash-title">&#9635; BLIND CODER</h1>
+        <p className="splash-subtitle">
+          Voice-Driven IDE for Visually Impaired Developers
+        </p>
+        <p className="splash-action-hint">
+          Click anywhere or press any key to initialize system audio...
+        </p>
+        <div className="audio-wave-bars">
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [isLoadingIntro, setIsLoadingIntro] = useState(true);
   const [code, setCode] = useState("");
   const [groqInput, setGroqInput] = useState("");
   const [consoleOutput, setConsoleOutput] = useState("");
@@ -19,7 +89,6 @@ export default function App() {
   const lastSpaceTime = useRef(0);
   const lastEnterTime = useRef(0);
   const pyodideReady = useRef(null);
-  const welcomeDone = useRef(false);
 
   // Advanced Multi-Gesture Tracking State Blocks
   const lastLeftTouchTime = useRef(0);
@@ -28,36 +97,6 @@ export default function App() {
   const voiceStreamActive = useRef(false);
 
   useEffect(() => {
-    const windowWelcomeTrigger = () => {
-      if (welcomeDone.current) return;
-      welcomeDone.current = true;
-      initAudio();
-
-      // Dynamically detect screen format boundary (Laptop vs iPad/Mobile)
-      const isTouchDevice = window.innerWidth <= 1024;
-
-      if (isTouchDevice) {
-        // Mobile / Tablet Prompt Configuration
-        speak(
-          "BlindCoder ready. Top pane: Hold to speak, double tap to read. Bottom pane: Tap to run, double tap to save, hold to clear.",
-        );
-        setStatusBar(
-          "Left: Hold=Speak, 2×Tap=Read | Right: Tap=Run, 2×Tap=Save, Hold=Clear",
-        );
-      } else {
-        // Pristine Laptop / Desktop Prompt Configuration
-        speak(
-          "BlindCoder ready. Hold Space to speak. Double tap Space to read code. Press Enter to run. Double tap Enter to save. Escape to clear.",
-        );
-        setStatusBar(
-          "Hold Space=Speak | 2×Space=Read | Enter=Run | 2×Enter=Save | Esc=Clear",
-        );
-      }
-
-      window.removeEventListener("mousedown", windowWelcomeTrigger);
-    };
-    window.addEventListener("mousedown", windowWelcomeTrigger);
-
     const loadPyEngine = async () => {
       if (window.loadPyodide) {
         try {
@@ -68,10 +107,6 @@ export default function App() {
       }
     };
     loadPyEngine();
-
-    return () => {
-      window.removeEventListener("mousedown", windowWelcomeTrigger);
-    };
   }, []);
 
   const processIncomingVoice = (transcript) => {
@@ -159,7 +194,14 @@ export default function App() {
       window.removeEventListener("keydown", triggerKeyDown);
       window.removeEventListener("keyup", triggerKeyUp);
     };
-  }, [code, groqInput, isListening]);
+  }, [
+    code,
+    groqInput,
+    isListening,
+    initAudio,
+    startVoiceCapture,
+    stopVoiceCapture,
+  ]);
 
   // CROSS-PLATFORM GESTURE MATRIX ROUTER
   const handlePanelTouchStart = (e, panelSide) => {
@@ -230,7 +272,7 @@ export default function App() {
           !data.code.includes("printf(");
         if (isJS) {
           setStatusBar("Code generated! Running now...");
-          speak("Code generated. Running now.");
+          speak("Code generated. Running now.", 0.85);
           setTimeout(() => {
             handleRuntimeCompilation(data.code);
           }, 600);
@@ -248,7 +290,7 @@ export default function App() {
                 : "txt";
           if (isPy) {
             setStatusBar("Code generated! Running Python now...");
-            speak("Python code generated. Running now.");
+            speak("Python code generated. Running now.", 0.85);
             setTimeout(() => {
               handleRuntimeCompilation(data.code);
             }, 800);
@@ -262,13 +304,14 @@ export default function App() {
               "Code generated. This is " +
                 ext +
                 " code. Double tap Enter to save.",
+              0.85,
             );
           }
         }
       }
     } catch (err) {
       setStatusBar("Network error: " + err.message);
-      speak("Network error.");
+      speak("Network error.", 0.85);
     }
   };
 
@@ -277,7 +320,7 @@ export default function App() {
     const activeCode = overrideCode || code.trim();
     if (!activeCode) {
       setStatusBar("No code to run.");
-      speak("No code found.");
+      speak("No code found.", 0.85);
       return;
     }
 
@@ -295,7 +338,10 @@ export default function App() {
       setConsoleOutput(
         "This is C/Java code. Press Enter+Enter to save it, then run it locally.",
       );
-      speak("This is C or Java code. Save it and run it on your computer.");
+      speak(
+        "This is C or Java code. Save it and run it on your computer.",
+        0.85,
+      );
       setStatusBar("C/Java detected — save and run locally.");
       return;
     }
@@ -303,7 +349,10 @@ export default function App() {
     if (isPython) {
       if (!pyodideReady.current) {
         setStatusBar("Python engine loading... please wait.");
-        speak("Python engine is still loading. Please try again in a moment.");
+        speak(
+          "Python engine is still loading. Please try again in a moment.",
+          0.85,
+        );
         return;
       }
       try {
@@ -321,12 +370,13 @@ export default function App() {
         speak(
           "Python ran successfully. Output: " +
             stdoutCapture.trim().split("\n").slice(0, 3).join(". "),
+          0.85,
         );
         setStatusBar("Python ran successfully.");
       } catch (err) {
         setConsoleOutput("ERROR\n\n" + err.message);
         playError();
-        speak("Python error. " + err.message);
+        speak("Python error. " + err.message, 0.85);
         setStatusBar("Python error.");
         dispatchDiagnosticExplanation(err.message, activeCode);
       }
@@ -354,13 +404,14 @@ export default function App() {
         logs.length
           ? "Code ran successfully. Output: " + logs.join(". ")
           : "Code ran successfully. No output detected.",
+        0.85,
       );
       setStatusBar("Code ran successfully.");
     } catch (err) {
       console.log = oldLog;
       setConsoleOutput("ERROR\n\n" + err.message);
       playError();
-      speak("Error. " + err.message + ". Asking Groq to explain.");
+      speak("Error. " + err.message + ". Asking Groq to explain.", 0.85);
       setStatusBar("Error - fetching explanation...");
       dispatchDiagnosticExplanation(err.message, activeCode);
     }
@@ -378,21 +429,21 @@ export default function App() {
         setConsoleOutput(
           (prev) => prev + `\n\nGroq explains:\n${data.explanation}`,
         );
-        speak("Groq explains: " + data.explanation);
+        speak("Groq explains: " + data.explanation, 0.85);
         setStatusBar("Error explained by Groq");
       }
     } catch (e) {}
   };
 
   const triggerAudioCodeRead = () => {
-    if (!code.trim()) return speak("No code to read.");
-    speak("Reading code. " + code);
+    if (!code.trim()) return speak("No code to read.", 0.85);
+    speak("Reading code. " + code, 0.85);
     setStatusBar("Reading code aloud...");
   };
 
   const executeBlobFileExport = () => {
     if (!code.trim()) {
-      speak("Nothing to save.");
+      speak("Nothing to save.", 0.85);
       return;
     }
     const ext = code.includes("public class")
@@ -408,7 +459,7 @@ export default function App() {
     a.download = "blindcoder_output." + ext;
     a.click();
     setStatusBar("Code saved as ." + ext + " to downloads!");
-    speak("Code saved as " + ext + " file to your downloads folder.");
+    speak("Code saved as " + ext + " file to your downloads folder.", 0.85);
   };
 
   const wipeStateBoards = () => {
@@ -416,136 +467,152 @@ export default function App() {
     setGroqInput("");
     setConsoleOutput("// Cleared. Ready for next command.");
     setStatusBar("Cleared. Hold Space to speak.");
-    speak("Cleared. Ready for your next command.");
+    speak("Cleared. Ready for your next command.", 0.85);
   };
 
   return (
-    <div className="app-layout">
-      <header>
-        <h1>&#9635; BLIND CODER</h1>
-        <span className="subtitle">
-          Voice-Driven IDE for Visually Impaired Developers
-        </span>
-        <span
-          className="copyright"
-          style={{ color: "#7a9abb", fontSize: "0.85rem", marginLeft: "15px" }}
-        >
-          &copy; Hanumanth Raghavendra 2026
-        </span>
-        <div className="header-right">
-          <span className="kb-hint">
-            Hold <kbd>Space</kbd> to speak &nbsp;|&nbsp; Double-tap{" "}
-            <kbd>Space</kbd> to read
-          </span>
-          <span className="kb-hint">
-            <kbd>Enter</kbd> Run &nbsp;|&nbsp; Double-tap <kbd>Enter</kbd> Save
-            &nbsp;|&nbsp; <kbd>Esc</kbd> Clear
-          </span>
-        </div>
-      </header>
+    <>
+      {isLoadingIntro && (
+        <IntroSplash onComplete={() => setIsLoadingIntro(false)} />
+      )}
 
-      <div className="main">
-        <div
-          className="left-panel"
-          onTouchStart={(e) => handlePanelTouchStart(e, "left")}
-          onTouchEnd={(e) => handlePanelTouchEnd(e, "left")}
-        >
-          <div className="panel-title">&#128221; Code Editor</div>
-          <textarea
-            id="code-area"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="// Your generated code will appear here...&#10;// Hold SPACEBAR and speak a command&#10;// e.g. write a program to find factorial of 5&#10;// Press Enter to run after code appears"
-          />
-          <div id="prompt-section">
-            <input
-              id="groq-input"
-              type="text"
-              value={groqInput}
-              onChange={(e) => setGroqInput(e.target.value)}
-              placeholder='Speak or type: "write a program to find factorial of 5"'
+      <div
+        className={`app-layout ${isLoadingIntro ? "app-hidden" : "app-visible"}`}
+      >
+        <header>
+          <h1>&#9635; BLIND CODER</h1>
+          <span className="subtitle">
+            Voice-Driven IDE for Visually Impaired Developers
+          </span>
+          <span
+            className="copyright"
+            style={{
+              color: "#7a9abb",
+              fontSize: "0.85rem",
+              marginLeft: "15px",
+            }}
+          >
+            &copy; Hanumanth Raghavendra 2026
+          </span>
+          <div className="header-right">
+            <span className="kb-hint">
+              Hold <kbd>Space</kbd> to speak &nbsp;|&nbsp; Double-tap{" "}
+              <kbd>Space</kbd> to read
+            </span>
+            <span className="kb-hint">
+              <kbd>Enter</kbd> Run &nbsp;|&nbsp; Double-tap <kbd>Enter</kbd>{" "}
+              Save &nbsp;|&nbsp; <kbd>Esc</kbd> Clear
+            </span>
+          </div>
+        </header>
+
+        <div className="main">
+          <div
+            className="left-panel"
+            onTouchStart={(e) => handlePanelTouchStart(e, "left")}
+            onTouchEnd={(e) => handlePanelTouchEnd(e, "left")}
+          >
+            <div className="panel-title">&#128221; Code Editor</div>
+            <textarea
+              id="code-area"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="// Your generated code will appear here...&#10;// Hold SPACEBAR and speak a command&#10;// e.g. write a program to find factorial of 5&#10;// Press Enter to run after code appears"
             />
-            <button
-              id="btn-generate"
-              onClick={() => dispatchGenerationRequest(groqInput)}
-            >
-              &#129302; Generate
-            </button>
+            <div id="prompt-section">
+              <input
+                id="groq-input"
+                type="text"
+                value={groqInput}
+                onChange={(e) => setGroqInput(e.target.value)}
+                placeholder='Speak or type: "write a program to find factorial of 5"'
+              />
+              <button
+                id="btn-generate"
+                onClick={() => dispatchGenerationRequest(groqInput)}
+              >
+                &#129302; Generate
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div
-          className="right-panel"
-          onTouchStart={(e) => handlePanelTouchStart(e, "right")}
-          onTouchEnd={(e) => handlePanelTouchEnd(e, "right")}
-        >
-          <div className="panel-title">&#128228; Output Console</div>
-          <div id="output-area">
-            {consoleOutput ? (
-              consoleOutput.startsWith("ERROR") ? (
-                <span className="output-error">{consoleOutput}</span>
-              ) : consoleOutput.startsWith("SUCCESS") ? (
-                <span className="output-success">{consoleOutput}</span>
+          <div
+            className="right-panel"
+            onTouchStart={(e) => handlePanelTouchStart(e, "right")}
+            onTouchEnd={(e) => handlePanelTouchEnd(e, "right")}
+          >
+            <div className="panel-title">&#128228; Output Console</div>
+            <div id="output-area">
+              {consoleOutput ? (
+                consoleOutput.startsWith("ERROR") ? (
+                  <span className="output-error">{consoleOutput}</span>
+                ) : consoleOutput.startsWith("SUCCESS") ? (
+                  <span className="output-success">{consoleOutput}</span>
+                ) : (
+                  <span className="output-info">{consoleOutput}</span>
+                )
               ) : (
-                <span className="output-info">{consoleOutput}</span>
-              )
-            ) : (
-              <span className="output-info">
-                // Output will appear here after running code...
-              </span>
-            )}
-          </div>
-          <div id="history-section">
-            <p>&#128336; Command History</p>
-            <ul id="history-list">
-              {historyList.map((item, index) => (
-                <li key={index} onClick={() => setGroqInput(item)} title={item}>
-                  {item}
-                </li>
-              ))}
-            </ul>
+                <span className="output-info">
+                  // Output will appear here after running code...
+                </span>
+              )}
+            </div>
+            <div id="history-section">
+              <p>&#128336; Command History</p>
+              <ul id="history-list">
+                {historyList.map((item, index) => (
+                  <li
+                    key={index}
+                    onClick={() => setGroqInput(item)}
+                    title={item}
+                  >
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="controls">
-        <button
-          id="btn-voice"
-          className={isListening ? "listening" : ""}
-          onClick={() =>
-            isListening ? stopVoiceCapture() : startVoiceCapture()
-          }
-        >
-          &#127908; Start Voice
-        </button>
-        <button id="btn-run" onClick={() => handleRuntimeCompilation()}>
-          &#9654; Run Code
-        </button>
-        <button id="btn-read" onClick={triggerAudioCodeRead}>
-          &#128266; Read Code
-        </button>
-        <button id="btn-save" onClick={executeBlobFileExport}>
-          &#128190; Save Code
-        </button>
-        <button id="btn-clear" onClick={wipeStateBoards}>
-          &#128465; Clear
-        </button>
-        <div id="status-bar">{statusBar}</div>
-        <div className="audio-indicator">
-          <div
-            className="dot"
-            id="dot-err"
-            style={{ background: "#ff4444" }}
-          ></div>
-          <span style={{ color: "#ff4444" }}>ERR</span>
-          <div
-            className="dot"
-            id="dot-ok"
-            style={{ background: "#00ff88" }}
-          ></div>
-          <span style={{ color: "#00ff88" }}>OK</span>
+        <div className="controls">
+          <button
+            id="btn-voice"
+            className={isListening ? "listening" : ""}
+            onClick={() =>
+              isListening ? stopVoiceCapture() : startVoiceCapture()
+            }
+          >
+            &#127908; Start Voice
+          </button>
+          <button id="btn-run" onClick={() => handleRuntimeCompilation()}>
+            &#9654; Run Code
+          </button>
+          <button id="btn-read" onClick={triggerAudioCodeRead}>
+            &#128266; Read Code
+          </button>
+          <button id="btn-save" onClick={executeBlobFileExport}>
+            &#128190; Save Code
+          </button>
+          <button id="btn-clear" onClick={wipeStateBoards}>
+            &#128465; Clear
+          </button>
+          <div id="status-bar">{statusBar}</div>
+          <div className="audio-indicator">
+            <div
+              className="dot"
+              id="dot-err"
+              style={{ background: "#ff4444" }}
+            ></div>
+            <span style={{ color: "#ff4444" }}>ERR</span>
+            <div
+              className="dot"
+              id="dot-ok"
+              style={{ background: "#00ff88" }}
+            ></div>
+            <span style={{ color: "#00ff88" }}>OK</span>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

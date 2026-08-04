@@ -1,6 +1,3 @@
-/* ==================================================== */
-/* 💻 1. MASTER LAPTOP & DESKTOP VIEWPORT LAYOUT        */
-/* ==================================================== */
 * {
   margin: 0;
   padding: 0;
@@ -17,12 +14,142 @@ body {
   overflow: hidden;
 }
 
-#root, .app-layout {
+#root,
+.app-layout {
   width: 100%;
   height: 100vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* App Transition Classes */
+.app-hidden {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.app-visible {
+  opacity: 1;
+  transition: opacity 0.6s ease-in-out;
+}
+
+/* Splash Screen Styling */
+.splash-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #0d1117;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+  transition:
+    opacity 0.8s ease-in-out,
+    transform 0.8s ease-in-out;
+  opacity: 1;
+}
+
+.splash-overlay.fade-out {
+  opacity: 0;
+  transform: scale(1.05);
+  pointer-events: none;
+}
+
+.splash-content {
+  text-align: center;
+  color: #ffffff;
+  padding: 20px;
+}
+
+.splash-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin: 20px 0 10px 0;
+  color: #00b4ff;
+  text-shadow: 0 0 20px rgba(0, 180, 255, 0.4);
+}
+
+.splash-subtitle {
+  font-size: 1.1rem;
+  color: #7a9abb;
+  margin-bottom: 8px;
+}
+
+.splash-action-hint {
+  font-size: 0.85rem;
+  color: #00ff88;
+  margin-bottom: 30px;
+  animation: pulse 1.5s infinite;
+}
+
+.pulse-ring {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto;
+  border-radius: 50%;
+  background: rgba(0, 180, 255, 0.15);
+  box-shadow: 0 0 0 0 rgba(0, 180, 255, 0.4);
+  animation: pulseEffect 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes pulseEffect {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 180, 255, 0.6);
+  }
+  70% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 20px rgba(0, 180, 255, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(0, 180, 255, 0);
+  }
+}
+
+.audio-wave-bars {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  align-items: center;
+}
+
+.audio-wave-bars span {
+  display: block;
+  width: 4px;
+  height: 100%;
+  background-color: #00b4ff;
+  border-radius: 2px;
+  animation: waveBounce 1.2s infinite ease-in-out;
+}
+
+.audio-wave-bars span:nth-child(2) {
+  animation-delay: -0.2s;
+}
+.audio-wave-bars span:nth-child(3) {
+  animation-delay: -0.4s;
+}
+.audio-wave-bars span:nth-child(4) {
+  animation-delay: -0.1s;
+}
+.audio-wave-bars span:nth-child(5) {
+  animation-delay: -0.3s;
+}
+
+@keyframes waveBounce {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
 }
 
 header {
@@ -185,13 +312,6 @@ header .subtitle {
   color: #00b4ff;
 }
 
-.output-explain {
-  color: #f0c040;
-  margin-top: 12px;
-  border-top: 1px solid #1e3a5f;
-  padding-top: 10px;
-}
-
 #history-section {
   background: #0a1a2e;
   border-top: 1px solid #1e3a5f;
@@ -265,8 +385,13 @@ button {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 #btn-run {
@@ -319,14 +444,12 @@ button {
 /* 📱 2. STRICT TARGETED MOBILE SCREEN BREAKPOINT ONLY */
 /* ==================================================== */
 @media (max-width: 767px) {
-  /* This breakpoint applies ONLY to small mobile devices. */
-  /* iPad Pro (1024px) and iPad Air (820px) are left untouched! */
-  
   body {
     overflow-y: auto !important;
   }
 
-  #root, .app-layout {
+  #root,
+  .app-layout {
     height: auto !important;
     min-height: 100vh;
     overflow: visible !important;
@@ -352,14 +475,16 @@ button {
     gap: 12px;
   }
 
-  .left-panel, .right-panel {
+  .left-panel,
+  .right-panel {
     width: 100% !important;
     height: auto !important;
     border-right: none !important;
     border-bottom: 2px solid #1e3a5f;
   }
 
-  #code-area, #output-area {
+  #code-area,
+  #output-area {
     height: 240px !important;
     min-height: 240px !important;
     overflow-y: auto !important;
