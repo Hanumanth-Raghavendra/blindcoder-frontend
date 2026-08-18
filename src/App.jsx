@@ -253,7 +253,7 @@ export default function App() {
   };
 
   const dispatchGenerationRequest = async (targetPrompt) => {
-    setStatusBar("Asking Groq AI...");
+    setStatusBar("Generating Code...");
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate`, {
         method: "POST",
