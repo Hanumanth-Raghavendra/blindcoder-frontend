@@ -253,6 +253,12 @@ export default function App() {
   };
 
   const dispatchGenerationRequest = async (targetPrompt) => {
+    if (!targetPrompt.trim()) {
+      setStatusBar("Please enter or speak a prompt first.");
+      speak("Please provide a prompt.", 0.85);
+      return;
+    }
+
     setStatusBar("Generating Code...");
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate`, {
@@ -260,7 +266,13 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: targetPrompt }),
       });
+
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Server failed to process generation request.");
+      }
+
       if (data.code) {
         setCode(data.code);
         const isJS =
@@ -308,13 +320,15 @@ export default function App() {
             );
           }
         }
+      } else {
+        throw new Error("No code returned from server.");
       }
     } catch (err) {
-      setStatusBar("Network error: " + err.message);
-      speak("Network error.", 0.85);
+      console.error("Generation error:", err.message);
+      setStatusBar("Error: " + err.message);
+      speak("Generation failed. Check status bar.", 0.85);
     }
   };
-
   const handleRuntimeCompilation = async (overrideCode) => {
     initAudio();
     const activeCode = overrideCode || code.trim();
