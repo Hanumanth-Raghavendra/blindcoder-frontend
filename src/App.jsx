@@ -1,631 +1,728 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import IntroSplash from "./components/IntroSplash.jsx";
 import { useAudioEngine } from "./hooks/useAudioEngine";
 import { useSpeechAPI } from "./hooks/useSpeechAPI";
+import { useGestures } from "./hooks/useGestures";
+import { post, warmUp } from "./lib/api";
+import { runCode, preloadPython, pythonStatus } from "./lib/runner";
+import { detectLanguage, fileNameFor, langInfo } from "./lib/language";
+import { codeLines, speakableLine, summarizeOutput } from "./lib/codeSpeech";
+import { matchCommand, HELP_TEXT, TOUCH_HELP_TEXT } from "./lib/voiceCommands";
+import { TIMEOUTS } from "./config";
 
-const BACKEND_URL = "https://blindcoder-backend.onrender.com";
+const HISTORY_KEY = "blindcoder.history";
+const DOUBLE_PRESS_MS = 400;
+const TAP_MS = 250; // a Space press shorter than this is a tap, not hold-to-talk
 
-// ==================================================== */
-// 🚀 INTRO SPLASH COMPONENT (Opening Animation & Audio)
-// ==================================================== */
-function IntroSplash({ onComplete }) {
-  const [isFadingOut, setIsFadingOut] = useState(false);
-  const { initAudio, speak } = useAudioEngine();
-  const splashTriggered = useRef(false);
+const isTouch = () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
 
-  useEffect(() => {
-    const handleFirstInteraction = () => {
-      if (splashTriggered.current) return;
-      splashTriggered.current = true;
-      initAudio();
+const loadHistory = () => {
+  try {
+    const h = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    return Array.isArray(h) ? h.slice(0, 15) : [];
+  } catch {
+    return [];
+  }
+};
 
-      // Dynamically detect screen format boundary (Laptop vs iPad/Mobile)
-      const isTouchDevice = window.innerWidth <= 1024;
+const firstLine = (text, max = 220) => {
+  const line = String(text || "").split("\n").map((l) => l.trim()).filter(Boolean)[0] || "";
+  return line.length > max ? line.slice(0, max) + "…" : line;
+};
 
-      const welcomeMessage = isTouchDevice
-        ? "Blind-Coder ready.... Top pane: Hold to speak.. double tap to read.. Bottom pane: Tap to run.. double tap to save.. hold to clear."
-        : "Blind-Coder ready.... Hold Space to speak.. double tap space to read.. press enter to run.. double tap enter to save.. escape to clear.";
-
-      // Reduced speech speed parameter (rate: 0.85) to make the intro audio slower and clearer
-      speak(welcomeMessage, 0.85);
-
-      // Increased duration to 10500ms to accommodate the slower speech rate before fading out
-      const finishTimer = setTimeout(() => {
-        setIsFadingOut(true);
-        setTimeout(() => {
-          onComplete();
-        }, 800); // Matches CSS transition duration
-      }, 10500);
-
-      window.removeEventListener("mousedown", handleFirstInteraction);
-      window.removeEventListener("keydown", handleFirstInteraction);
-      return () => clearTimeout(finishTimer);
-    };
-
-    window.addEventListener("mousedown", handleFirstInteraction);
-    window.addEventListener("keydown", handleFirstInteraction);
-
-    return () => {
-      window.removeEventListener("mousedown", handleFirstInteraction);
-      window.removeEventListener("keydown", handleFirstInteraction);
-    };
-  }, [initAudio, speak, onComplete]);
-
-  return (
-    <div className={`splash-overlay ${isFadingOut ? "fade-out" : ""}`}>
-      <div className="splash-content">
-        <div className="pulse-ring"></div>
-        <h1 className="splash-title">&#9635; BLIND CODER</h1>
-        <p className="splash-subtitle">
-          Voice-Driven IDE for Visually Impaired Developers
-        </p>
-        <p className="splash-action-hint">
-          Click anywhere or press any key to initialize system audio...
-        </p>
-        <div className="audio-wave-bars">
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-      </div>
-    </div>
-  );
-}
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export default function App() {
-  const [isLoadingIntro, setIsLoadingIntro] = useState(true);
+  const [started, setStarted] = useState(false);
+  const [splashLeaving, setSplashLeaving] = useState(false);
   const [code, setCode] = useState("");
-  const [groqInput, setGroqInput] = useState("");
-  const [consoleOutput, setConsoleOutput] = useState("");
-  const [statusBar, setStatusBar] = useState(
-    "Click anywhere to begin. Then hold Spacebar to speak.",
-  );
-  const [historyList, setHistoryList] = useState([]);
-  const [isListening, setIsListening] = useState(false);
+  const [language, setLanguage] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [output, setOutput] = useState(null); // { kind: success|error|info, text, detail }
+  const [status, setStatus] = useState("Press any key to start.");
+  const [meta, setMeta] = useState("");
+  const [busy, setBusy] = useState(null);
+  const [history, setHistory] = useState(loadHistory);
+  const [lastError, setLastError] = useState(null);
 
-  const { initAudio, playSuccess, playError, speak } = useAudioEngine();
-  const isSpaceHeld = useRef(false);
-  const lastSpaceTime = useRef(0);
-  const lastEnterTime = useRef(0);
-  const pyodideReady = useRef(null);
+  const audio = useAudioEngine();
+  const { speak, earcons } = audio;
 
-  // Advanced Multi-Gesture Tracking State Blocks
-  const lastLeftTouchTime = useRef(0);
-  const lastRightTouchTime = useRef(0);
-  const touchHoldTimeout = useRef(null);
-  const voiceStreamActive = useRef(false);
+  // Refs mirror state so keyboard/voice handlers always see the latest values.
+  const s = useRef({});
+  s.current = { code, language, output, busy, lastError, history };
+  const undoStack = useRef([]);
+  const lineIndex = useRef(-1);
+  const spaceDown = useRef(false);
+  const lastSpace = useRef(0); // when the last quick Space *tap* ended
+  const spaceDownAt = useRef(0);
+  const lastEnter = useRef(0);
+  const lastEscape = useRef(0);
+  const promptInputRef = useRef(null);
+  const startedRef = useRef(false);
 
   useEffect(() => {
-    const loadPyEngine = async () => {
-      if (window.loadPyodide) {
-        try {
-          pyodideReady.current = await window.loadPyodide();
-        } catch (e) {
-          console.error("Pyodide loading error:", e);
-        }
-      }
-    };
-    loadPyEngine();
+    warmUp();
+    preloadPython();
   }, []);
 
-  const processIncomingVoice = (transcript) => {
-    const lower = transcript.toLowerCase();
-    let langHint = "";
-    if (lower.includes("python"))
-      langHint = " Generate in Python only. Use print() for output.";
-    else if (
-      lower.includes("c program") ||
-      lower.includes(" in c") ||
-      lower.includes("c language")
-    )
-      langHint = " Generate in C language only. Use printf() for output.";
-    else if (lower.includes("java") && !lower.includes("javascript"))
-      langHint = " Generate in Java only. Use System.out.println() for output.";
+  useEffect(() => {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch {
+      /* ignore */
+    }
+  }, [history]);
 
-    const completePrompt = transcript + langHint;
-    setGroqInput(completePrompt);
-    setStatusBar("Heard: " + transcript);
-    setHistoryList((prev) => [transcript, ...prev].slice(0, 10));
-    dispatchGenerationRequest(completePrompt);
+  // ---------------------------------------------------------------- helpers
+  const applyCode = useCallback((next, lang) => {
+    const cur = s.current.code;
+    if (cur.trim() && cur !== next) undoStack.current = [...undoStack.current, { code: cur, language: s.current.language }].slice(-25);
+    const resolved = lang || detectLanguage(next) || s.current.language;
+    s.current.code = next;
+    s.current.language = resolved;
+    setCode(next);
+    setLanguage(resolved);
+    lineIndex.current = -1;
+    return resolved;
+  }, []);
+
+  const describeMeta = (data) => {
+    if (!data?.providerLabel) return "";
+    const secs = data.cached ? "instant" : `${(data.ms / 1000).toFixed(1)}s`;
+    return `${data.providerLabel} · ${data.model} · ${secs}`;
   };
 
-  const { startVoiceCapture, stopVoiceCapture } = useSpeechAPI(
-    processIncomingVoice,
-    setStatusBar,
-    setIsListening,
+  const fail = useCallback(
+    (message) => {
+      earcons.error();
+      setStatus(message);
+      speak(message);
+    },
+    [earcons, speak],
   );
 
-  // Keyboard Event Handlers
-  useEffect(() => {
-    const triggerKeyDown = (e) => {
-      const typing =
-        document.activeElement.tagName === "INPUT" ||
-        document.activeElement.tagName === "TEXTAREA";
-
-      if (e.code === "Space" && !typing) {
-        e.preventDefault();
-        initAudio();
-        if (e.repeat) return;
-
-        const now = Date.now();
-        if (now - lastSpaceTime.current < 400) {
-          lastSpaceTime.current = 0;
-          triggerAudioCodeRead();
-        } else {
-          if (!isListening && !isSpaceHeld.current) {
-            isSpaceHeld.current = true;
-            startVoiceCapture();
-          }
-          lastSpaceTime.current = now;
+  // ---------------------------------------------------------------- actions
+  const explain = useCallback(
+    async ({ queue = false, auto = false } = {}) => {
+      const { code: c, language: lang, lastError: err } = s.current;
+      if (!c.trim()) return speak("There's no code to explain yet.", { queue });
+      const error = err && err.code === c ? err.message : "";
+      if (!auto) {
+        setBusy("explaining");
+        audio.startThinking();
+        setStatus(error ? "Explaining the error…" : "Explaining the code…");
+      }
+      try {
+        const data = await post("/api/explain", { code: c, error, language: lang }, { timeoutMs: TIMEOUTS.ai });
+        setOutput((prev) => ({
+          ...(prev || { kind: "info", text: "" }),
+          explanation: data.explanation,
+        }));
+        setMeta(describeMeta(data));
+        setStatus(error ? "Error explained. Say fix it to repair it." : "Code explained.");
+        speak(error ? `${data.explanation} Say fix it, and I'll repair it.` : data.explanation, { queue });
+      } catch (e) {
+        if (auto) speak("Say fix it, and I'll try to repair it.", { queue });
+        else fail(e.message);
+      } finally {
+        if (!auto) {
+          audio.stopThinking();
+          setBusy(null);
         }
       }
+    },
+    [audio, fail, speak],
+  );
 
-      if (!typing) {
-        if (e.code === "Enter") {
+  const run = useCallback(
+    async ({ codeOverride, langOverride, queue = false } = {}) => {
+      audio.initAudio();
+      if (s.current.busy && codeOverride === undefined) return speak("Still working on the last request.");
+      const c = codeOverride ?? s.current.code;
+      if (!c.trim()) return speak("There's no code yet. Hold Space and ask for a program.", { queue });
+      const lang = langOverride || s.current.language || detectLanguage(c);
+      const info = langInfo(lang);
+
+      setBusy("running");
+      setStatus(`Running ${info.name}…`);
+      if (lang === "python" && pythonStatus() === "loading") speak("Loading Python, one moment.", { queue });
+      const remote = lang !== "javascript" && lang !== "python";
+      if (remote) audio.startThinking();
+
+      const r = await runCode(c, lang);
+      audio.stopThinking();
+      setBusy(null);
+
+      if (r.ok) {
+        const out = (r.output || "").replace(/\s+$/, "");
+        setLastError(null);
+        setOutput({ kind: "success", text: out || "(The program ran but printed nothing.)", detail: r.stderr || r.warnings || "" });
+        setStatus(`Ran successfully${r.where === "cloud" ? " on the online compiler" : ""}.`);
+        earcons.success();
+        speak(out ? `Output: ${summarizeOutput(out)}` : "It ran, but printed nothing.", { queue });
+        return;
+      }
+
+      if (r.unsupported || r.unavailable) {
+        setOutput({ kind: "info", text: r.error });
+        setStatus(r.error);
+        speak(r.error, { queue });
+        return;
+      }
+
+      const where = r.line ? ` on line ${r.line}` : "";
+      const err = { message: r.error, line: r.line, code: c };
+      setLastError(err);
+      s.current.lastError = err;
+      setOutput({
+        kind: "error",
+        text: [r.output && `${r.output}\n`, `Error${where}: ${r.error}`].filter(Boolean).join("\n"),
+        detail: r.detail || "",
+      });
+      setStatus(`Error${where}. Say "fix it" or "explain".`);
+      earcons.error();
+      speak(`Error${where}. ${firstLine(r.error)}`, { queue });
+      if (r.timedOut) speak("Say fix it, and I'll repair it.", { queue: true });
+      else explain({ queue: true, auto: true });
+    },
+    [audio, earcons, explain, speak],
+  );
+
+  const codeTask = useCallback(
+    async (path, body, { label, historyText } = {}) => {
+      if (s.current.busy) return speak("Still working on the last request.");
+      setBusy(path === "/api/fix" ? "fixing" : "generating");
+      setStatus(label);
+      audio.startThinking();
+      speak("Working on it.");
+      if (historyText) setHistory((h) => [historyText, ...h.filter((x) => x !== historyText)].slice(0, 15));
+
+      try {
+        const data = await post(path, body, {
+          timeoutMs: TIMEOUTS.ai,
+          onSlow: () => speak("Still working. The server may be waking up.", { queue: true }),
+        });
+        audio.stopThinking();
+        const lang = applyCode(data.code, data.language);
+        const info = langInfo(lang);
+        setMeta(describeMeta(data));
+        setOutput(null);
+        setLastError(null);
+        s.current.lastError = null;
+        const lines = codeLines(data.code).length;
+        speak(`${data.summary || `${info.spoken} code is ready.`} ${info.spoken}, ${plural(lines, "line")}. Running it now.`);
+        setBusy(null);
+        await run({ codeOverride: data.code, langOverride: lang, queue: true });
+      } catch (e) {
+        audio.stopThinking();
+        setBusy(null);
+        fail(e.message || "Something went wrong.");
+      }
+    },
+    [applyCode, audio, fail, run, speak],
+  );
+
+  const generate = useCallback(
+    (text) => {
+      const p = String(text || "").trim();
+      if (!p) return speak("Please say or type what you want the program to do.");
+      const { code: c, language: lang } = s.current;
+      return codeTask("/api/generate", { prompt: p, code: c, language: lang }, { label: `Writing code: “${p}”`, historyText: p });
+    },
+    [codeTask, speak],
+  );
+
+  const fix = useCallback(() => {
+    const { code: c, language: lang, lastError: err } = s.current;
+    if (!c.trim()) return speak("There's no code to fix yet.");
+    const error = err && err.code === c ? err.message : "";
+    return codeTask("/api/fix", { code: c, error, language: lang }, { label: "Fixing the code…" });
+  }, [codeTask, speak]);
+
+  const readCode = useCallback(() => {
+    const { code: c, language: lang } = s.current;
+    if (!c.trim()) return speak("There's no code to read.");
+    const lines = codeLines(c);
+    lineIndex.current = -1;
+    setStatus("Reading code aloud… Press Escape to stop.");
+    speak([`${langInfo(lang).spoken} code, ${plural(lines.length, "line")}.`, ...lines.map((l, i) => `Line ${i + 1}. ${speakableLine(l)}`)]);
+  }, [speak]);
+
+  const readLine = useCallback(
+    (delta) => {
+      const lines = codeLines(s.current.code);
+      if (!s.current.code.trim()) return speak("There's no code.");
+      const next = Math.min(lines.length - 1, Math.max(0, lineIndex.current + delta));
+      const edge = next === lineIndex.current ? (delta > 0 ? "Last line. " : "First line. ") : "";
+      lineIndex.current = next;
+      speak(`${edge}Line ${next + 1} of ${lines.length}. ${speakableLine(lines[next])}`);
+    },
+    [speak],
+  );
+
+  const readOutput = useCallback(() => {
+    const o = s.current.output;
+    if (!o?.text) return speak("There's no output yet. Press Enter to run the code.");
+    const lines = o.text.split("\n").filter((l) => l.trim());
+    speak([o.kind === "error" ? "Error output." : "Output.", ...lines, ...(o.explanation ? [o.explanation] : [])]);
+  }, [speak]);
+
+  const save = useCallback(() => {
+    const { code: c, language: lang } = s.current;
+    if (!c.trim()) return speak("Nothing to save yet.");
+    const name = fileNameFor(c, lang);
+    const url = URL.createObjectURL(new Blob([c], { type: "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus(`Saved ${name} to your downloads.`);
+    speak(`Saved as ${name.replace(".", " dot ")} in your downloads folder.`);
+  }, [speak]);
+
+  const clear = useCallback(() => {
+    const { code: c, language: lang } = s.current;
+    if (c.trim()) undoStack.current = [...undoStack.current, { code: c, language: lang }].slice(-25);
+    s.current.code = "";
+    setCode("");
+    setLanguage("");
+    setPrompt("");
+    setOutput(null);
+    setLastError(null);
+    setMeta("");
+    lineIndex.current = -1;
+    setStatus("Cleared. Hold Space to speak.");
+    speak(c.trim() ? "Cleared. Say undo to bring it back." : "Cleared. Ready for your next command.");
+  }, [speak]);
+
+  const undo = useCallback(() => {
+    const prev = undoStack.current.pop();
+    if (!prev) return speak("Nothing to undo.");
+    s.current.code = prev.code;
+    setCode(prev.code);
+    setLanguage(prev.language);
+    setLastError(null);
+    lineIndex.current = -1;
+    setStatus("Restored the previous code.");
+    speak(`Undone. Restored ${langInfo(prev.language).spoken} code, ${plural(codeLines(prev.code).length, "line")}.`);
+  }, [speak]);
+
+  const help = useCallback(() => speak(isTouch() ? TOUCH_HELP_TEXT : HELP_TEXT), [speak]);
+
+  const stopSpeech = useCallback(() => {
+    audio.stopSpeaking();
+    setStatus("Speech stopped.");
+  }, [audio]);
+
+  const setVoice = useCallback(
+    (on) => {
+      audio.setBuiltInVoice(on);
+      setStatus(on ? "Built-in voice on." : "Built-in voice off. Your screen reader will announce messages.");
+      setTimeout(() => speak(on ? "Built-in voice on." : "Built-in voice off. Your screen reader will read messages now."), 50);
+    },
+    [audio, speak],
+  );
+
+  const changeRate = useCallback(
+    (delta) => {
+      audio.changeRate(delta);
+      setTimeout(() => speak(delta > 0 ? "Faster." : "Slower."), 30);
+    },
+    [audio, speak],
+  );
+
+  const actions = {
+    run: () => run(),
+    read: readCode,
+    readOutput,
+    save,
+    clear,
+    undo,
+    fix,
+    explain: () => explain(),
+    repeat: audio.repeatLast,
+    stop: stopSpeech,
+    faster: () => changeRate(0.15),
+    slower: () => changeRate(-0.15),
+    voiceOff: () => setVoice(false),
+    voiceOn: () => setVoice(true),
+    help,
+  };
+  const actionsRef = useRef(actions);
+  actionsRef.current = { ...actions, generate, readLine };
+
+  // ---------------------------------------------------------------- voice input
+  const voice = useSpeechAPI({
+    onInterim: (text) => setPrompt(text),
+    onEmpty: () => {
+      earcons.listenStop();
+      setStatus("Didn't catch that. Hold Space and try again.");
+      speak("I didn't catch that.");
+    },
+    onTranscript: (text) => {
+      earcons.listenStop();
+      const command = matchCommand(text);
+      if (command) {
+        setStatus(`Command: ${text}`);
+        actionsRef.current[command]();
+      } else {
+        setPrompt(text);
+        actionsRef.current.generate(text);
+      }
+    },
+    onError: (error) => {
+      const messages = {
+        "not-allowed": "Microphone access is blocked. Allow the microphone for this site in your browser, or type your request.",
+        "service-not-allowed": "Microphone access is blocked. Allow the microphone for this site in your browser, or type your request.",
+        unsupported: "Voice input isn't supported in this browser. Please use Chrome, Edge or Safari, or type your request.",
+        network: "Voice recognition needs an internet connection.",
+        "audio-capture": "No microphone was found.",
+      };
+      fail(messages[error] || `Voice error: ${error}.`);
+    },
+  });
+
+  const startListening = useCallback(() => {
+    audio.initAudio();
+    audio.stopSpeaking();
+    if (voice.start()) {
+      earcons.listenStart();
+      setStatus("Listening… release to send.");
+    }
+  }, [audio, earcons, voice]);
+
+  // ---------------------------------------------------------------- start
+  const start = useCallback(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    audio.initAudio();
+    setSplashLeaving(true);
+    setTimeout(() => setStarted(true), 400);
+    setStatus(isTouch() ? "Hold the top pane to speak." : "Hold Space to speak.");
+    speak(
+      isTouch()
+        ? "BlindCoder ready. Top pane: hold to speak, double tap to read. Bottom pane: tap to run, double tap to save, hold to clear. Say help any time."
+        : "BlindCoder ready. Hold Space and speak a request. Press Enter to run. Press F1, or say help, to hear all commands.",
+    );
+  }, [audio, speak]);
+
+  // ---------------------------------------------------------------- keyboard
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (!startedRef.current) {
+        if (!["Shift", "Control", "Alt", "Meta", "Tab"].includes(e.key)) {
+          e.preventDefault();
+          start();
+        }
+        return;
+      }
+      const el = document.activeElement;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      const onControl = el && (el.tagName === "BUTTON" || el.tagName === "A" || el.tagName === "SELECT");
+      const a = actionsRef.current;
+
+      if (typing) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          el.blur();
+          speak("Left the text box. Keyboard shortcuts are active.");
+        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && el.tagName === "TEXTAREA") {
+          e.preventDefault();
+          a.run();
+        }
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Let Space/Enter activate a focused button normally (screen-reader users tab to buttons).
+      if (onControl && (e.code === "Space" || e.key === "Enter")) return;
+
+      switch (e.code === "Space" ? "Space" : e.key) {
+        case "Space": {
           e.preventDefault();
           if (e.repeat) return;
           const now = Date.now();
-          if (now - lastEnterTime.current < 400) {
-            lastEnterTime.current = 0;
-            executeBlobFileExport();
+          // Double tap = two quick taps. A real hold-to-talk never counts as a tap.
+          if (lastSpace.current && now - lastSpace.current < DOUBLE_PRESS_MS) {
+            lastSpace.current = 0;
+            spaceDown.current = false;
+            voice.cancel();
+            a.read();
           } else {
-            lastEnterTime.current = now;
-            handleRuntimeCompilation();
+            spaceDownAt.current = now;
+            spaceDown.current = true;
+            startListening();
           }
+          return;
         }
-        if (e.code === "Escape") {
+        case "Enter": {
           e.preventDefault();
-          wipeStateBoards();
-        }
-      }
-    };
-
-    const triggerKeyUp = (e) => {
-      if (e.code === "Space") {
-        isSpaceHeld.current = false;
-        stopVoiceCapture();
-      }
-    };
-
-    window.addEventListener("keydown", triggerKeyDown);
-    window.addEventListener("keyup", triggerKeyUp);
-    return () => {
-      window.removeEventListener("keydown", triggerKeyDown);
-      window.removeEventListener("keyup", triggerKeyUp);
-    };
-  }, [
-    code,
-    groqInput,
-    isListening,
-    initAudio,
-    startVoiceCapture,
-    stopVoiceCapture,
-  ]);
-
-  // CROSS-PLATFORM GESTURE MATRIX ROUTER
-  const handlePanelTouchStart = (e, panelSide) => {
-    const isInteractive =
-      e.target.tagName === "BUTTON" || e.target.tagName === "INPUT";
-    if (isInteractive) return;
-
-    initAudio();
-    const now = Date.now();
-
-    if (panelSide === "left") {
-      if (now - lastLeftTouchTime.current < 300) {
-        clearTimeout(touchHoldTimeout.current);
-        lastLeftTouchTime.current = 0;
-        triggerAudioCodeRead();
-      } else {
-        lastLeftTouchTime.current = now;
-        touchHoldTimeout.current = setTimeout(() => {
-          voiceStreamActive.current = true;
-          startVoiceCapture();
-          setStatusBar("Listening to voice input streams...");
-        }, 350);
-      }
-    } else if (panelSide === "right") {
-      if (now - lastRightTouchTime.current < 300) {
-        clearTimeout(touchHoldTimeout.current);
-        lastRightTouchTime.current = 0;
-        executeBlobFileExport();
-      } else {
-        lastRightTouchTime.current = now;
-
-        touchHoldTimeout.current = setTimeout(() => {
-          handleRuntimeCompilation();
-        }, 280);
-
-        touchHoldTimeout.current = setTimeout(() => {
-          wipeStateBoards();
-        }, 1000);
-      }
-    }
-  };
-
-  const handlePanelTouchEnd = (e, panelSide) => {
-    clearTimeout(touchHoldTimeout.current);
-    if (panelSide === "left" && voiceStreamActive.current) {
-      voiceStreamActive.current = false;
-      stopVoiceCapture();
-    }
-  };
-
-  const dispatchGenerationRequest = async (targetPrompt) => {
-    if (!targetPrompt.trim()) {
-      setStatusBar("Please enter or speak a prompt first.");
-      speak("Please provide a prompt.", 0.85);
-      return;
-    }
-
-    setStatusBar("Generating Code...");
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: targetPrompt }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Server failed to process generation request.");
-      }
-
-      if (data.code) {
-        setCode(data.code);
-        const isJS =
-          !data.code.includes("print(") &&
-          !data.code.includes("#include") &&
-          !data.code.includes("public class") &&
-          !data.code.includes("def ") &&
-          !data.code.includes("System.out") &&
-          !data.code.includes("printf(");
-        if (isJS) {
-          setStatusBar("Code generated! Running now...");
-          speak("Code generated. Running now.", 0.85);
-          setTimeout(() => {
-            handleRuntimeCompilation(data.code);
-          }, 600);
-        } else {
-          const isPy =
-            data.code.includes("print(") ||
-            data.code.includes("def ") ||
-            data.code.includes("import ");
-          const ext = isPy
-            ? "py"
-            : data.code.includes("#include")
-              ? "c"
-              : data.code.includes("public class")
-                ? "java"
-                : "txt";
-          if (isPy) {
-            setStatusBar("Code generated! Running Python now...");
-            speak("Python code generated. Running now.", 0.85);
-            setTimeout(() => {
-              handleRuntimeCompilation(data.code);
-            }, 800);
+          if (e.repeat) return;
+          const now = Date.now();
+          if (now - lastEnter.current < DOUBLE_PRESS_MS) {
+            lastEnter.current = 0;
+            a.save();
           } else {
-            setStatusBar(
-              "Code generated! Press double-Enter to save as ." +
-                ext +
-                " file.",
-            );
-            speak(
-              "Code generated. This is " +
-                ext +
-                " code. Double tap Enter to save.",
-              0.85,
-            );
+            lastEnter.current = now;
+            a.run();
           }
+          return;
         }
-      } else {
-        throw new Error("No code returned from server.");
+        case "Escape": {
+          e.preventDefault();
+          const now = Date.now();
+          if (audio.isSpeaking() && now - lastEscape.current > DOUBLE_PRESS_MS) {
+            lastEscape.current = now;
+            a.stop();
+          } else {
+            lastEscape.current = 0;
+            a.clear();
+          }
+          return;
+        }
+        case "ArrowDown":
+          e.preventDefault();
+          return a.readLine(1);
+        case "ArrowUp":
+          e.preventDefault();
+          return a.readLine(-1);
+        case "F1":
+        case "?":
+          e.preventDefault();
+          return a.help();
+        case "+":
+        case "=":
+          return a.faster();
+        case "-":
+        case "_":
+          return a.slower();
+        default:
+          break;
       }
-    } catch (err) {
-      console.error("Generation error:", err.message);
-      setStatusBar("Error: " + err.message);
-      speak("Generation failed. Check status bar.", 0.85);
-    }
-  };
-  const handleRuntimeCompilation = async (overrideCode) => {
-    initAudio();
-    const activeCode = overrideCode || code.trim();
-    if (!activeCode) {
-      setStatusBar("No code to run.");
-      speak("No code found.", 0.85);
-      return;
-    }
-
-    setConsoleOutput("");
-    const isPython =
-      activeCode.includes("print(") ||
-      activeCode.includes("def ") ||
-      activeCode.includes("import ");
-    const isNonJS =
-      activeCode.includes("#include") ||
-      activeCode.includes("public class") ||
-      activeCode.includes("System.out");
-
-    if (isNonJS) {
-      setConsoleOutput(
-        "This is C/Java code. Press Enter+Enter to save it, then run it locally.",
-      );
-      speak(
-        "This is C or Java code. Save it and run it on your computer.",
-        0.85,
-      );
-      setStatusBar("C/Java detected — save and run locally.");
-      return;
-    }
-
-    if (isPython) {
-      if (!pyodideReady.current) {
-        setStatusBar("Python engine loading... please wait.");
-        speak(
-          "Python engine is still loading. Please try again in a moment.",
-          0.85,
-        );
-        return;
+      const key = e.key.toLowerCase();
+      const letter = { m: () => a[audio.builtInVoice ? "voiceOff" : "voiceOn"](), r: a.repeat, f: a.fix, e: a.explain, u: a.undo, o: a.readOutput, s: a.stop }[key];
+      if (letter) {
+        e.preventDefault();
+        letter();
       }
-      try {
-        setStatusBar("Running Python...");
-        let stdoutCapture = "";
-        pyodideReady.current.setStdout({
-          batched: (text) => {
-            stdoutCapture += text;
-          },
-        });
-        await pyodideReady.current.runPythonAsync(activeCode);
-        const outText = stdoutCapture.trim() || "(ran with no output)";
-        setConsoleOutput("SUCCESS\n\n" + outText);
-        playSuccess();
-        speak(
-          "Python ran successfully. Output: " +
-            stdoutCapture.trim().split("\n").slice(0, 3).join(". "),
-          0.85,
-        );
-        setStatusBar("Python ran successfully.");
-      } catch (err) {
-        setConsoleOutput("ERROR\n\n" + err.message);
-        playError();
-        speak("Python error. " + err.message, 0.85);
-        setStatusBar("Python error.");
-        dispatchDiagnosticExplanation(err.message, activeCode);
+    };
+
+    const onKeyUp = (e) => {
+      if (e.code === "Space" && spaceDown.current) {
+        spaceDown.current = false;
+        const now = Date.now();
+        const wasTap = now - spaceDownAt.current < TAP_MS;
+        lastSpace.current = wasTap ? now : 0;
+        if (wasTap) voice.cancel();
+        else voice.stop();
       }
-      return;
-    }
+    };
 
-    let logs = [];
-    const oldLog = console.log;
-    console.log = (...args) =>
-      logs.push(
-        args
-          .map((a) => (typeof a === "object" ? JSON.stringify(a) : String(a)))
-          .join(" "),
-      );
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [audio, speak, start, startListening, voice]);
 
-    try {
-      const result = eval(activeCode);
-      console.log = oldLog;
-      let allOutput = logs.slice();
-      if (result !== undefined) allOutput.push("-> " + result);
-      const outText = allOutput.join("\n") || "(code ran - no output)";
-      setConsoleOutput("SUCCESS\n\n" + outText);
-      playSuccess();
-      speak(
-        logs.length
-          ? "Code ran successfully. Output: " + logs.join(". ")
-          : "Code ran successfully. No output detected.",
-        0.85,
-      );
-      setStatusBar("Code ran successfully.");
-    } catch (err) {
-      console.log = oldLog;
-      setConsoleOutput("ERROR\n\n" + err.message);
-      playError();
-      speak("Error. " + err.message + ". Asking Groq to explain.", 0.85);
-      setStatusBar("Error - fetching explanation...");
-      dispatchDiagnosticExplanation(err.message, activeCode);
-    }
-  };
+  // ---------------------------------------------------------------- touch
+  const topGestures = useGestures({
+    onDoubleTap: () => actionsRef.current.read(),
+    onHoldStart: startListening,
+    onHoldEnd: () => voice.stop(),
+    holdMs: 350,
+  });
+  const bottomGestures = useGestures({
+    onTap: () => actionsRef.current.run(),
+    onDoubleTap: () => actionsRef.current.save(),
+    onHoldStart: () => actionsRef.current.clear(),
+    holdMs: 800,
+  });
 
-  const dispatchDiagnosticExplanation = async (errMsg, activeCode) => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/explain`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ errMsg, code: activeCode }),
-      });
-      const data = await res.json();
-      if (data.explanation) {
-        setConsoleOutput(
-          (prev) => prev + `\n\nGroq explains:\n${data.explanation}`,
-        );
-        speak("Groq explains: " + data.explanation, 0.85);
-        setStatusBar("Error explained by Groq");
-      }
-    } catch (e) {}
-  };
-
-  const triggerAudioCodeRead = () => {
-    if (!code.trim()) return speak("No code to read.", 0.85);
-    speak("Reading code. " + code, 0.85);
-    setStatusBar("Reading code aloud...");
-  };
-
-  const executeBlobFileExport = () => {
-    if (!code.trim()) {
-      speak("Nothing to save.", 0.85);
-      return;
-    }
-    const ext = code.includes("public class")
-      ? "java"
-      : code.includes("#include")
-        ? "c"
-        : code.includes("print(")
-          ? "py"
-          : "js";
-    const blob = new Blob([code], { type: "text/plain" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "blindcoder_output." + ext;
-    a.click();
-    setStatusBar("Code saved as ." + ext + " to downloads!");
-    speak("Code saved as " + ext + " file to your downloads folder.", 0.85);
-  };
-
-  const wipeStateBoards = () => {
-    setCode("");
-    setGroqInput("");
-    setConsoleOutput("// Cleared. Ready for next command.");
-    setStatusBar("Cleared. Hold Space to speak.");
-    speak("Cleared. Ready for your next command.", 0.85);
-  };
+  // ---------------------------------------------------------------- render
+  const info = langInfo(language);
+  const lineCount = code ? codeLines(code).length : 0;
+  const busyLabel = { generating: "Writing code", fixing: "Fixing", running: "Running", explaining: "Explaining" }[busy];
 
   return (
     <>
-      {isLoadingIntro && (
-        <IntroSplash onComplete={() => setIsLoadingIntro(false)} />
-      )}
+      {!started && <IntroSplash leaving={splashLeaving} onStart={start} />}
 
-      <div
-        className={`app-layout ${isLoadingIntro ? "app-hidden" : "app-visible"}`}
-      >
+      {/* Screen-reader announcements (only used when the built-in voice is off). */}
+      <div className="sr-only" aria-live="polite" aria-relevant="additions" role="status">
+        {audio.announcement.map((m) => (
+          <p key={m.id}>{m.text}</p>
+        ))}
+      </div>
+
+      <div className={`app-layout ${started ? "app-visible" : "app-hidden"}`} aria-hidden={!started}>
         <header>
           <h1>&#9635; BLIND CODER</h1>
-          <span className="subtitle">
-            Voice-Driven IDE for Visually Impaired Developers
-          </span>
-          <span
-            className="copyright"
-            style={{
-              color: "#7a9abb",
-              fontSize: "0.85rem",
-              marginLeft: "15px",
-            }}
-          >
-            &copy; Hanumanth Raghavendra 2026
-          </span>
-          <div className="header-right">
+          <span className="subtitle">Voice-Driven IDE for Visually Impaired Developers</span>
+          <span className="copyright">&copy; Hanumanth Raghavendra 2026</span>
+          <div className="header-right" aria-hidden="true">
             <span className="kb-hint">
-              Hold <kbd>Space</kbd> to speak &nbsp;|&nbsp; Double-tap{" "}
-              <kbd>Space</kbd> to read
+              Hold <kbd>Space</kbd> speak · <kbd>Space</kbd>
+              <kbd>Space</kbd> read · <kbd>↑</kbd>
+              <kbd>↓</kbd> lines
             </span>
             <span className="kb-hint">
-              <kbd>Enter</kbd> Run &nbsp;|&nbsp; Double-tap <kbd>Enter</kbd>{" "}
-              Save &nbsp;|&nbsp; <kbd>Esc</kbd> Clear
+              <kbd>Enter</kbd> run · <kbd>Enter</kbd>
+              <kbd>Enter</kbd> save · <kbd>Esc</kbd> stop/clear · <kbd>F1</kbd> help
             </span>
           </div>
         </header>
 
-        <div className="main">
-          <div
-            className="left-panel"
-            onTouchStart={(e) => handlePanelTouchStart(e, "left")}
-            onTouchEnd={(e) => handlePanelTouchEnd(e, "left")}
-          >
-            <div className="panel-title">&#128221; Code Editor</div>
+        <main className="main">
+          <section className="left-panel" aria-label="Code editor" {...topGestures}>
+            <div className="panel-title">
+              <span>&#128221; Code Editor</span>
+              {code && (
+                <span className="lang-badge">
+                  {info.name} · {plural(lineCount, "line")}
+                </span>
+              )}
+            </div>
             <textarea
               id="code-area"
+              aria-label={`Code editor${code ? `, ${info.name}, ${plural(lineCount, "line")}` : ", empty"}`}
               value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="// Your generated code will appear here...&#10;// Hold SPACEBAR and speak a command&#10;// e.g. write a program to find factorial of 5&#10;// Press Enter to run after code appears"
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              onChange={(e) => {
+                const next = e.target.value;
+                s.current.code = next;
+                setCode(next);
+                setLanguage(detectLanguage(next) || s.current.language);
+              }}
+              placeholder={
+                "// Your generated code will appear here...\n// Hold SPACEBAR and speak a command\n// e.g. write a program to find the factorial of 5\n// Then just say what to change: \"make it use recursion\""
+              }
             />
-            <div id="prompt-section">
+            <form
+              id="prompt-section"
+              onSubmit={(e) => {
+                e.preventDefault();
+                generate(prompt);
+              }}
+            >
+              <label htmlFor="prompt-input" className="sr-only">
+                Describe the program you want
+              </label>
               <input
-                id="groq-input"
+                id="prompt-input"
+                ref={promptInputRef}
                 type="text"
-                value={groqInput}
-                onChange={(e) => setGroqInput(e.target.value)}
-                placeholder='Speak or type: "write a program to find factorial of 5"'
+                value={prompt}
+                autoComplete="off"
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={voice.isListening ? "Listening…" : 'Speak or type: "write a program to find factorial of 5"'}
               />
-              <button
-                id="btn-generate"
-                onClick={() => dispatchGenerationRequest(groqInput)}
-              >
-                &#129302; Generate
+              <button id="btn-generate" type="submit" disabled={Boolean(busy)}>
+                &#129302; {code ? "Update" : "Generate"}
               </button>
-            </div>
-          </div>
+            </form>
+          </section>
 
-          <div
-            className="right-panel"
-            onTouchStart={(e) => handlePanelTouchStart(e, "right")}
-            onTouchEnd={(e) => handlePanelTouchEnd(e, "right")}
-          >
-            <div className="panel-title">&#128228; Output Console</div>
-            <div id="output-area">
-              {consoleOutput ? (
-                consoleOutput.startsWith("ERROR") ? (
-                  <span className="output-error">{consoleOutput}</span>
-                ) : consoleOutput.startsWith("SUCCESS") ? (
-                  <span className="output-success">{consoleOutput}</span>
-                ) : (
-                  <span className="output-info">{consoleOutput}</span>
-                )
-              ) : (
-                <span className="output-info">
-                  // Output will appear here after running code...
+          <section className="right-panel" aria-label="Output console" {...bottomGestures}>
+            <div className="panel-title">
+              <span>&#128228; Output Console</span>
+              {busyLabel && (
+                <span className="busy" aria-hidden="true">
+                  <span className="spinner" /> {busyLabel}…
                 </span>
+              )}
+            </div>
+            <div id="output-area" role="log" aria-label="Program output" tabIndex={0}>
+              {output ? (
+                <>
+                  <span className={`output-${output.kind}`}>
+                    {output.kind === "success" ? "SUCCESS\n\n" : output.kind === "error" ? "ERROR\n\n" : ""}
+                    {output.text}
+                  </span>
+                  {output.detail && <span className="output-detail">{"\n\n" + output.detail}</span>}
+                  {output.explanation && (
+                    <span className="output-explain">
+                      {"\n\n💡 "}
+                      {output.explanation}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="output-info">// Output will appear here after running code...</span>
               )}
             </div>
             <div id="history-section">
               <p>&#128336; Command History</p>
               <ul id="history-list">
-                {historyList.map((item, index) => (
-                  <li
-                    key={index}
-                    onClick={() => setGroqInput(item)}
-                    title={item}
-                  >
-                    {item}
+                {history.map((item) => (
+                  <li key={item}>
+                    <button
+                      type="button"
+                      title={item}
+                      onClick={() => {
+                        setPrompt(item);
+                        promptInputRef.current?.focus();
+                      }}
+                    >
+                      {item}
+                    </button>
                   </li>
                 ))}
               </ul>
             </div>
-          </div>
-        </div>
+          </section>
+        </main>
 
-        <div className="controls">
+        <footer className="controls">
           <button
             id="btn-voice"
-            className={isListening ? "listening" : ""}
-            onClick={() =>
-              isListening ? stopVoiceCapture() : startVoiceCapture()
-            }
+            type="button"
+            className={voice.isListening ? "listening" : ""}
+            aria-pressed={voice.isListening}
+            onClick={() => (voice.isListening ? voice.stop() : startListening())}
           >
-            &#127908; Start Voice
+            &#127908; {voice.isListening ? "Stop & Send" : "Start Voice"}
           </button>
-          <button id="btn-run" onClick={() => handleRuntimeCompilation()}>
-            &#9654; Run Code
+          <button id="btn-run" type="button" aria-keyshortcuts="Enter" onClick={() => run()} disabled={Boolean(busy)}>
+            &#9654; Run
           </button>
-          <button id="btn-read" onClick={triggerAudioCodeRead}>
-            &#128266; Read Code
+          <button id="btn-read" type="button" onClick={readCode}>
+            &#128266; Read
           </button>
-          <button id="btn-save" onClick={executeBlobFileExport}>
-            &#128190; Save Code
+          <button id="btn-explain" type="button" aria-keyshortcuts="E" onClick={() => explain()} disabled={Boolean(busy)}>
+            &#128161; Explain
           </button>
-          <button id="btn-clear" onClick={wipeStateBoards}>
+          <button id="btn-fix" type="button" aria-keyshortcuts="F" onClick={fix} disabled={Boolean(busy)}>
+            &#128295; Fix
+          </button>
+          <button id="btn-save" type="button" onClick={save}>
+            &#128190; Save
+          </button>
+          <button id="btn-undo" type="button" aria-keyshortcuts="U" onClick={undo}>
+            &#8630; Undo
+          </button>
+          <button id="btn-clear" type="button" onClick={clear}>
             &#128465; Clear
           </button>
-          <div id="status-bar">{statusBar}</div>
-          <div className="audio-indicator">
-            <div
-              className="dot"
-              id="dot-err"
-              style={{ background: "#ff4444" }}
-            ></div>
-            <span style={{ color: "#ff4444" }}>ERR</span>
-            <div
-              className="dot"
-              id="dot-ok"
-              style={{ background: "#00ff88" }}
-            ></div>
-            <span style={{ color: "#00ff88" }}>OK</span>
+          <div id="status-bar">
+            <span>{status}</span>
+            {meta && <span className="meta">{meta}</span>}
           </div>
-        </div>
+          <div className="speech-settings">
+            <button type="button" className="mini" onClick={() => setVoice(!audio.builtInVoice)} aria-keyshortcuts="M">
+              {audio.builtInVoice ? "🔊 Voice" : "🔇 Screen reader"}
+            </button>
+            <span className="rate" aria-label={`Speech speed ${audio.rate}`}>
+              {audio.rate.toFixed(2)}×
+            </span>
+          </div>
+        </footer>
       </div>
     </>
   );

@@ -63,6 +63,26 @@ body {
   text-align: center;
   color: #ffffff;
   padding: 20px;
+  background: none;
+  border: none;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+}
+
+.splash-content:focus-visible {
+  outline: none;
+}
+
+.splash-title,
+.splash-subtitle,
+.splash-action-hint {
+  display: block;
 }
 
 .splash-title {
@@ -173,11 +193,24 @@ header .subtitle {
   font-size: 0.82rem;
 }
 
+header .copyright {
+  color: #7a9abb;
+  font-size: 0.85rem;
+}
+
 .header-right {
   margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
+}
+
+@media (max-width: 1100px) {
+  header .copyright {
+    display: none;
+  }
 }
 
 .kb-hint {
@@ -212,6 +245,10 @@ header .subtitle {
 }
 
 .panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   background: #0d2137;
   padding: 7px 16px;
   font-size: 0.75rem;
@@ -226,9 +263,10 @@ header .subtitle {
   flex: 1;
   background: #081624;
   padding: 18px 20px;
-  font-family: "Courier New", monospace;
-  font-size: 0.95rem;
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  font-size: 1.05rem;
   color: #e0f0ff;
+  tab-size: 4;
   border: none;
   resize: none;
   outline: none;
@@ -246,24 +284,24 @@ header .subtitle {
   flex-shrink: 0;
 }
 
-#groq-input {
+#prompt-input {
   flex: 1;
   background: #081624;
   border: 1px solid #1e3a5f;
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 9px 12px;
   color: #fff;
-  font-size: 0.88rem;
+  font-size: 0.95rem;
   outline: none;
   transition: border 0.2s;
 }
 
-#groq-input:focus {
+#prompt-input:focus {
   border-color: #00b4ff;
 }
 
-#groq-input::placeholder {
-  color: #445;
+#prompt-input::placeholder {
+  color: #5a7090;
 }
 
 #btn-generate {
@@ -293,10 +331,11 @@ header .subtitle {
   flex: 1;
   background: #050e1a;
   padding: 18px 20px;
-  font-family: "Courier New", monospace;
-  font-size: 0.9rem;
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  font-size: 0.98rem;
   overflow-y: auto;
   white-space: pre-wrap;
+  word-break: break-word;
   line-height: 1.6;
 }
 
@@ -312,6 +351,15 @@ header .subtitle {
   color: #00b4ff;
 }
 
+.output-detail {
+  color: #8aa4c0;
+}
+
+.output-explain {
+  color: #ffd479;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
 #history-section {
   background: #0a1a2e;
   border-top: 1px solid #1e3a5f;
@@ -323,7 +371,7 @@ header .subtitle {
 
 #history-section p {
   font-size: 0.72rem;
-  color: #556;
+  color: #6a7f99;
   margin-bottom: 5px;
   letter-spacing: 1px;
   text-transform: uppercase;
@@ -334,23 +382,32 @@ header .subtitle {
 }
 
 #history-list li {
-  font-size: 0.8rem;
-  color: #7a9abb;
-  padding: 2px 0;
-  cursor: pointer;
   border-bottom: 1px solid #0d2137;
+}
+
+#history-list li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  font-size: 0.82rem;
+  font-weight: normal;
+  color: #7a9abb;
+  padding: 3px 0;
+  border-radius: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-#history-list li:hover {
+#history-list li button:hover,
+#history-list li button:focus-visible {
   color: #00b4ff;
 }
 
-#history-list li::before {
+#history-list li button::before {
   content: "\25B8 ";
-  color: #1e3a5f;
+  color: #2e5a8f;
 }
 
 .controls {
@@ -411,34 +468,127 @@ button {
 
 #btn-clear {
   background: #1a1a2e;
-  color: #aaa;
+  color: #c8d2de;
   border: 1px solid #1e3a5f;
+}
+
+#btn-explain {
+  background: #8a6d1f;
+  color: #fff;
+}
+
+#btn-fix {
+  background: #b4531b;
+  color: #fff;
+}
+
+#btn-undo {
+  background: #1e3a5f;
+  color: #ccc;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible,
+#output-area:focus-visible {
+  outline: 3px solid #ffd479;
+  outline-offset: 2px;
 }
 
 #status-bar {
   flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   background: #081624;
   border-radius: 6px;
   padding: 7px 14px;
-  font-size: 0.82rem;
-  color: #7a9abb;
+  font-size: 0.88rem;
+  color: #a9c0d8;
   border: 1px solid #1e3a5f;
   min-width: 180px;
 }
 
-.audio-indicator {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 0.75rem;
+#status-bar .meta {
+  font-size: 0.72rem;
+  color: #5f7a99;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  transition: all 0.3s;
+.lang-badge {
+  text-transform: none;
+  letter-spacing: 0;
+  background: #112240;
+  border: 1px solid #1e3a5f;
+  border-radius: 20px;
+  padding: 1px 10px;
+  color: #7fd3ff;
 }
+
+.busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #ffd479;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffd47944;
+  border-top-color: #ffd479;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.speech-settings {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: #7a9abb;
+}
+
+button.mini {
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  background: #112240;
+  color: #a9c0d8;
+  border: 1px solid #1e3a5f;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 
 /* ==================================================== */
 /* 📱 2. STRICT TARGETED MOBILE SCREEN BREAKPOINT ONLY */
@@ -506,9 +656,28 @@ button {
     margin-bottom: 2px;
   }
 
-  button {
+  .controls > button {
     flex: 1 1 calc(50% - 6px) !important;
-    padding: 12px 6px !important;
-    font-size: 0.8rem !important;
+    padding: 14px 6px !important;
+    font-size: 0.9rem !important;
+  }
+
+  #status-bar {
+    flex-direction: column;
+  }
+
+  .speech-settings {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
