@@ -3,11 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="BlindCoder: a voice-driven code editor for blind and visually impaired developers. Speak a request, hear the code, run it instantly." />
+    <meta name="theme-color" content="#0a192f" />
+    <meta name="color-scheme" content="dark" />
     <title>BlindCoder — Voice-Driven IDE</title>
     <link rel="icon" type="image/png" href="/favicon.png" />
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js"></script>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="preconnect" href="https://blindcoder-backend.onrender.com" crossorigin />
   </head>
   <body>
+    <noscript>BlindCoder needs JavaScript enabled.</noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
