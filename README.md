@@ -22,11 +22,19 @@ Live: https://blindcoder.vercel.app · Backend: [blindcoder-backend](https://git
 | `↑` / `↓` | Read the previous / next line |
 | `Enter` / `Ctrl+Enter` | Run |
 | Double tap `Enter`, or `Ctrl+S` (works even while typing) | Save the file (Java is saved as `Main.java` so it compiles) |
+| `Shift+S` | Choose a folder to save into without any dialog |
 | `Esc` | Stop speaking; press again to clear. Inside a text box, `Esc` leaves it so shortcuts work again |
 | `U` / `F` / `E` / `O` / `R` | Undo / fix / explain / read output / repeat |
 | `+` / `-` | Speech faster / slower |
 | `M` | Switch between the built-in voice and **your own screen reader** (NVDA, JAWS, VoiceOver) |
 | `F1` | Help |
+
+### Saving files
+
+- Files are named after what the program does, with the exact extension: `prime_numbers.py`, `bubble_sort.cpp`, `fizz_buzz.go`. Java files use the class name (`PrimeNumbers.java`) so they compile as-is. The current name is shown at the top of the editor.
+- **Save without any "Save as" window:** press `Shift+S` once (or click 📁) and choose a folder. Browsers don't allow the Downloads folder itself, so pick or create one inside it, such as `Downloads\BlindCoder`. From then on, double `Enter` / `Ctrl+S` writes straight into that folder. Chrome and Edge on desktop only. Say "use downloads" to switch back.
+- Different code never overwrites an existing file (`prime_numbers_2.py`). Saving identical code twice doesn't create a duplicate. Java updates its file in place, because the name must match the class.
+- Or turn off **"Ask where to save each file before downloading"** in your browser's download settings, and normal saves go straight to Downloads with no window.
 
 ### Phone / tablet
 

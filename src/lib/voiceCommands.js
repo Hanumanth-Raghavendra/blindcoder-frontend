@@ -30,6 +30,8 @@ const COMMANDS = {
   stop: ["stop", "stop talking", "quiet", "be quiet", "silence", "shut up", "pause"],
   faster: ["faster", "speak faster", "talk faster", "speed up"],
   slower: ["slower", "speak slower", "talk slower", "slow down"],
+  chooseFolder: ["choose folder", "choose save folder", "set save folder", "save folder", "change folder", "change save folder", "pick folder", "pick a folder"],
+  useDownloads: ["use downloads", "save to downloads", "forget folder", "forget save folder"],
   voiceOff: ["voice off", "mute", "use my screen reader", "screen reader mode"],
   voiceOn: ["voice on", "unmute", "use built in voice"],
   help: ["help", "commands", "what can i say", "what can you do", "instructions"],
@@ -73,7 +75,7 @@ export const HELP_TEXT =
   "Hold Space and speak. Ask for any program, like: write a program to reverse a string in Java. " +
   "To change your code, just say what to change, like: make it print the first ten numbers. " +
   "Spoken commands: run, read, read output, explain, fix it, undo, save, clear, repeat, next line, line 5, faster, slower, and stop. " +
-  "Keys: Enter runs. Double tap Enter, or Control S, saves. Double tap Space reads the code. Up and down arrows read one line at a time. " +
+  "Keys: Enter runs. Double tap Enter, or Control S, saves. Shift S picks a folder to save into without any save window. Double tap Space reads the code. Up and down arrows read one line at a time. " +
   "Escape stops speech, press it again to clear. Plus and minus change speech speed. M switches to your own screen reader.";
 
 export const TOUCH_HELP_TEXT =

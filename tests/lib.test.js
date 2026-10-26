@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { matchCommand, parseLineCommand } from "../src/lib/voiceCommands.js";
 import { speakableLine, summarizeOutput, indentLevel } from "../src/lib/codeSpeech.js";
-import { detectLanguage, fileNameFor } from "../src/lib/language.js";
+import { detectLanguage, fileNameFor, stemFromPrompt, speakFileName, toFileStem } from "../src/lib/language.js";
 import { cleanPythonError } from "../src/lib/runner.js";
 
 test("voice commands are recognised, coding requests are not", () => {
@@ -31,7 +31,7 @@ test("language detection and file names", () => {
   assert.equal(detectLanguage("console.log(1)"), "javascript");
   assert.equal(detectLanguage("print('hi')"), "python");
   assert.equal(fileNameFor("public class Main { }", "java"), "Main.java");
-  assert.equal(fileNameFor("print(1)", "python"), "blindcoder.py");
+  assert.equal(fileNameFor("print(1)", "python"), "python_program.py");
 });
 
 test("python tracebacks are cleaned up", () => {
@@ -56,4 +56,26 @@ test("line navigation commands", () => {
   assert.equal(parseLineCommand("Line 3."), 3);
   assert.equal(parseLineCommand("write a line of code"), null);
   assert.equal(matchCommand("print each line of a file"), null);
+});
+
+test("saved files get a descriptive name and the exact extension", () => {
+  assert.equal(fileNameFor("print(1)", "python", "prime_numbers"), "prime_numbers.py");
+  assert.equal(fileNameFor("int main(){}", "cpp", "bubble_sort"), "bubble_sort.cpp");
+  assert.equal(fileNameFor("int main(){}", "c", "Bubble Sort"), "bubble_sort.c");
+  assert.equal(fileNameFor("class Program{}", "csharp", "hello"), "hello.cs");
+  assert.equal(fileNameFor("package main", "go", "fizz_buzz"), "fizz_buzz.go");
+  assert.equal(fileNameFor("fn main(){}", "rust", "x"), "x.rs");
+  assert.equal(fileNameFor("puts 1", "ruby", "x"), "x.rb");
+  assert.equal(fileNameFor("echo 1", "bash", "x"), "x.sh");
+  assert.equal(fileNameFor("console.log(1)", "typescript", "x"), "x.ts");
+  assert.equal(fileNameFor("public class PrimeNumbers { }", "java", "anything"), "PrimeNumbers.java");
+  assert.equal(fileNameFor("def reverse_string(s):\n  return s[::-1]", "python"), "reverse_string.py");
+});
+
+test("fallback names come from the spoken request", () => {
+  assert.equal(stemFromPrompt("write a program to find factorial of 5 in python"), "find_factorial_5");
+  assert.equal(stemFromPrompt("Create a bubble sort program in C++"), "bubble_sort");
+  assert.equal(stemFromPrompt("reverse a string using java"), "reverse_string");
+  assert.equal(toFileStem("PrimeNumbers"), "prime_numbers");
+  assert.equal(speakFileName("prime_numbers.py"), "prime numbers dot py");
 });

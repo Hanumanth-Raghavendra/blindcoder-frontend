@@ -5,7 +5,15 @@ import { useSpeechAPI } from "./hooks/useSpeechAPI";
 import { useGestures } from "./hooks/useGestures";
 import { post, warmUp } from "./lib/api";
 import { runCode, preloadPython, pythonStatus } from "./lib/runner";
-import { detectLanguage, fileNameFor, langInfo } from "./lib/language";
+import { detectLanguage, fileNameFor, langInfo, speakFileName, stemFromPrompt } from "./lib/language";
+import {
+  chooseSaveFolder,
+  folderSaveSupported,
+  forgetSaveFolder,
+  getSaveFolder,
+  rememberedFolderName,
+  saveToFolder,
+} from "./lib/saveFolder";
 import { codeLines, speakableLine, summarizeOutput } from "./lib/codeSpeech";
 import { matchCommand, parseLineCommand, HELP_TEXT, TOUCH_HELP_TEXT } from "./lib/voiceCommands";
 import { TIMEOUTS } from "./config";
@@ -44,13 +52,16 @@ export default function App() {
   const [busy, setBusy] = useState(null);
   const [history, setHistory] = useState(loadHistory);
   const [lastError, setLastError] = useState(null);
+  const [fileStem, setFileStem] = useState(""); // descriptive name for the saved file, e.g. "prime_numbers"
+  const [saveFolderName, setSaveFolderName] = useState("");
 
   const audio = useAudioEngine();
   const { speak, earcons } = audio;
 
   // Refs mirror state so keyboard/voice handlers always see the latest values.
   const s = useRef({});
-  s.current = { code, language, output, busy, lastError, history };
+  s.current = { code, language, output, busy, lastError, history, fileStem };
+  const saveTipGiven = useRef(false);
   const undoStack = useRef([]);
   const lineIndex = useRef(-1);
   const spaceDown = useRef(false);
@@ -65,6 +76,7 @@ export default function App() {
   useEffect(() => {
     warmUp();
     preloadPython();
+    if (folderSaveSupported()) setSaveFolderName(rememberedFolderName());
   }, []);
 
   useEffect(() => {
@@ -76,14 +88,18 @@ export default function App() {
   }, [history]);
 
   // ---------------------------------------------------------------- helpers
-  const applyCode = useCallback((next, lang) => {
+  const snapshot = () => ({ code: s.current.code, language: s.current.language, fileStem: s.current.fileStem });
+
+  const applyCode = useCallback((next, lang, stem) => {
     const cur = s.current.code;
-    if (cur.trim() && cur !== next) undoStack.current = [...undoStack.current, { code: cur, language: s.current.language }].slice(-25);
+    if (cur.trim() && cur !== next) undoStack.current = [...undoStack.current, snapshot()].slice(-25);
     const resolved = lang || detectLanguage(next) || s.current.language;
     s.current.code = next;
     s.current.language = resolved;
+    s.current.fileStem = stem ?? s.current.fileStem;
     setCode(next);
     setLanguage(resolved);
+    setFileStem(s.current.fileStem);
     lineIndex.current = -1;
     return resolved;
   }, []);
@@ -191,7 +207,7 @@ export default function App() {
   );
 
   const codeTask = useCallback(
-    async (path, body, { label, historyText } = {}) => {
+    async (path, body, { label, historyText, nameFrom } = {}) => {
       if (s.current.busy) return speak("Still working on the last request.");
       setBusy(path === "/api/fix" ? "fixing" : "generating");
       setStatus(label);
@@ -205,7 +221,10 @@ export default function App() {
           onSlow: () => speak("Still working. The server may be waking up.", { queue: true }),
         });
         audio.stopThinking();
-        const lang = applyCode(data.code, data.language);
+        // Name the file after what the program does: the AI's suggestion, else the request,
+        // and a fix keeps the name the file already had.
+        const stem = path === "/api/fix" ? s.current.fileStem || data.filename : data.filename || stemFromPrompt(nameFrom);
+        const lang = applyCode(data.code, data.language, stem || "");
         const info = langInfo(lang);
         setMeta(describeMeta(data));
         setOutput(null);
@@ -229,7 +248,11 @@ export default function App() {
       const p = String(text || "").trim();
       if (!p) return speak("Please say or type what you want the program to do.");
       const { code: c, language: lang } = s.current;
-      return codeTask("/api/generate", { prompt: p, code: c, language: lang }, { label: `Writing code: “${p}”`, historyText: p });
+      return codeTask(
+        "/api/generate",
+        { prompt: p, code: c, language: lang },
+        { label: `Writing code: “${p}”`, historyText: p, nameFrom: p },
+      );
     },
     [codeTask, speak],
   );
@@ -272,11 +295,8 @@ export default function App() {
     speak([o.kind === "error" ? "Error output." : "Output.", ...lines, ...(o.explanation ? [o.explanation] : [])]);
   }, [speak]);
 
-  const save = useCallback(() => {
-    const { code: c, language: lang } = s.current;
-    if (!c.trim()) return speak("Nothing to save yet.");
-    const name = fileNameFor(c, lang);
-    const url = URL.createObjectURL(new Blob([c], { type: "text/plain" }));
+  const download = (name, content) => {
+    const url = URL.createObjectURL(new Blob([content], { type: "text/plain" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
@@ -284,16 +304,94 @@ export default function App() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  /** If the browser pops up a "Save as" window, the page loses focus. Explain how to stop that, once. */
+  const watchForSaveDialog = useCallback(() => {
+    if (saveTipGiven.current) return;
+    const onBlur = () => {
+      cleanup();
+      const onBack = () => {
+        window.removeEventListener("focus", onBack);
+        saveTipGiven.current = true;
+        speak(
+          folderSaveSupported()
+            ? "Tip: to skip that save window, press Shift S once and pick a folder, such as a BlindCoder folder inside Downloads. After that, double Enter saves instantly. Or turn off Ask where to save each file, in your browser's download settings."
+            : "Tip: to skip that save window, turn off Ask where to save each file, in your browser's download settings.",
+          { queue: true },
+        );
+      };
+      window.addEventListener("focus", onBack);
+    };
+    const cleanup = () => window.removeEventListener("blur", onBlur);
+    window.addEventListener("blur", onBlur);
+    setTimeout(cleanup, 2000);
+  }, [speak]);
+
+  const save = useCallback(async () => {
+    const { code: c, fileStem: stem } = s.current;
+    if (!c.trim()) return speak("Nothing to save yet.");
+    const lang = s.current.language || detectLanguage(c);
+    const name = fileNameFor(c, lang, stem);
+
+    // 1) A folder picked once with Shift+S: write straight into it, no dialog.
+    if (folderSaveSupported() && (await getSaveFolder())) {
+      const r = await saveToFolder(name, c);
+      if (r.saved) {
+        setStatus(`${r.replaced ? "Updated" : "Saved"} ${r.name} in ${r.folder}.`);
+        earcons.success();
+        speak(`${r.replaced ? "Updated" : "Saved"} ${speakFileName(r.name)}, in your ${r.folder} folder.`);
+        return;
+      }
+      if (r.reason !== "no-folder") {
+        setSaveFolderName("");
+        speak("I couldn't use your save folder, so I'm downloading the file instead. Press Shift S to choose the folder again.", {
+          queue: true,
+        });
+      }
+    }
+
+    // 2) Normal browser download, to the Downloads folder.
+    download(name, c);
+    watchForSaveDialog();
     setStatus(`Saved ${name} to your downloads.`);
-    speak(`Saved as ${name.replace(".", " dot ")} in your downloads folder.`);
+    speak(`Saving ${speakFileName(name)} to your downloads.`, { queue: true });
+  }, [earcons, speak, watchForSaveDialog]);
+
+  const chooseFolder = useCallback(async () => {
+    if (!folderSaveSupported()) {
+      return speak(
+        "This browser can't save into a folder directly. To skip the save window, turn off Ask where to save each file, in your browser's download settings.",
+      );
+    }
+    speak("Choose a folder for your code. Your browser won't allow the Downloads folder itself, so choose or create a folder inside it, such as BlindCoder.");
+    try {
+      const dir = await chooseSaveFolder();
+      setSaveFolderName(dir.name);
+      setStatus(`Saving to ${dir.name}. Double Enter saves instantly.`);
+      speak(`Done. From now on, double Enter saves straight into ${dir.name}, without asking.`);
+    } catch (err) {
+      if (err?.name === "AbortError") speak("No folder chosen. Saves will keep going to Downloads.");
+      else if (err?.name === "SecurityError") speak("Press Shift S to choose the folder.");
+      else speak("That folder can't be used. Please choose a folder inside Downloads, such as BlindCoder.");
+    }
+  }, [speak]);
+
+  const useDownloads = useCallback(async () => {
+    await forgetSaveFolder();
+    setSaveFolderName("");
+    setStatus("Saving to Downloads.");
+    speak("Okay. Files will be saved to your Downloads folder.");
   }, [speak]);
 
   const clear = useCallback(() => {
-    const { code: c, language: lang } = s.current;
-    if (c.trim()) undoStack.current = [...undoStack.current, { code: c, language: lang }].slice(-25);
+    const { code: c } = s.current;
+    if (c.trim()) undoStack.current = [...undoStack.current, snapshot()].slice(-25);
     s.current.code = "";
+    s.current.fileStem = "";
     setCode("");
     setLanguage("");
+    setFileStem("");
     setPrompt("");
     setOutput(null);
     setLastError(null);
@@ -307,8 +405,10 @@ export default function App() {
     const prev = undoStack.current.pop();
     if (!prev) return speak("Nothing to undo.");
     s.current.code = prev.code;
+    s.current.fileStem = prev.fileStem || "";
     setCode(prev.code);
     setLanguage(prev.language);
+    setFileStem(prev.fileStem || "");
     setLastError(null);
     lineIndex.current = -1;
     setStatus("Restored the previous code.");
@@ -357,6 +457,8 @@ export default function App() {
     nextLine: () => readLine(1),
     prevLine: () => readLine(-1),
     firstLine: () => readLine(0, 1),
+    chooseFolder,
+    useDownloads,
     help,
   };
   const actionsRef = useRef(actions);
@@ -527,6 +629,10 @@ export default function App() {
           break;
       }
       const key = e.key.toLowerCase();
+      if (e.shiftKey && key === "s") {
+        e.preventDefault();
+        return a.chooseFolder();
+      }
       const letter = { m: () => a[audio.builtInVoice ? "voiceOff" : "voiceOn"](), r: a.repeat, f: a.fix, e: a.explain, u: a.undo, o: a.readOutput, s: a.stop }[key];
       if (letter) {
         e.preventDefault();
@@ -620,8 +726,8 @@ export default function App() {
             <div className="panel-title">
               <span>&#128221; Code Editor</span>
               {code && (
-                <span className="lang-badge">
-                  {info.name} · {plural(lineCount, "line")}
+                <span className="lang-badge" title="File name used when you save">
+                  {fileNameFor(code, language || detectLanguage(code), fileStem)} · {plural(lineCount, "line")}
                 </span>
               )}
             </div>
@@ -782,6 +888,18 @@ export default function App() {
             {meta && <span className="meta">{meta}</span>}
           </div>
           <div className="speech-settings">
+            {folderSaveSupported() && (
+              <button
+                type="button"
+                className="mini"
+                onClick={chooseFolder}
+                aria-keyshortcuts="Shift+S"
+                aria-label={`Save folder: ${saveFolderName || "Downloads, asks each time if your browser is set to"}. Choose a folder to save without a dialog.`}
+                title="Choose a folder once; double Enter then saves straight into it"
+              >
+                📁 {saveFolderName || "Downloads"}
+              </button>
+            )}
             <button type="button" className="mini" onClick={() => setVoice(!audio.builtInVoice)} aria-keyshortcuts="M">
               {audio.builtInVoice ? "🔊 Voice" : "🔇 Screen reader"}
             </button>
