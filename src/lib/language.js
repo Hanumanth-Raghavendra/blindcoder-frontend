@@ -20,6 +20,18 @@ export const LANGUAGES = {
   r: { name: "R", spoken: "R", ext: "r", runsIn: "cloud" },
   bash: { name: "Bash", spoken: "Bash", ext: "sh", runsIn: "cloud" },
   sql: { name: "SQL", spoken: "S Q L", ext: "sql", runsIn: "cloud" },
+  elixir: { name: "Elixir", spoken: "Elixir", ext: "exs", runsIn: "cloud" },
+  erlang: { name: "Erlang", spoken: "Erlang", ext: "erl", runsIn: "cloud" },
+  julia: { name: "Julia", spoken: "Julia", ext: "jl", runsIn: "cloud" },
+  dart: { name: "Dart", spoken: "Dart", ext: "dart", runsIn: "cloud" },
+  d: { name: "D", spoken: "D", ext: "d", runsIn: "cloud" },
+  nim: { name: "Nim", spoken: "Nim", ext: "nim", runsIn: "cloud" },
+  zig: { name: "Zig", spoken: "Zig", ext: "zig", runsIn: "cloud" },
+  ocaml: { name: "OCaml", spoken: "O Caml", ext: "ml", runsIn: "cloud" },
+  pascal: { name: "Pascal", spoken: "Pascal", ext: "pas", runsIn: "cloud" },
+  groovy: { name: "Groovy", spoken: "Groovy", ext: "groovy", runsIn: "cloud" },
+  lisp: { name: "Lisp", spoken: "Lisp", ext: "lisp", runsIn: "cloud" },
+  fsharp: { name: "F#", spoken: "F sharp", ext: "fsx", runsIn: "cloud" },
 };
 
 export const langInfo = (id) => LANGUAGES[id] || { name: "Code", spoken: "code", ext: "txt", runsIn: "none" };
@@ -42,12 +54,58 @@ export function detectLanguage(code = "") {
   return "";
 }
 
-/** Java needs the file named after its public class to compile locally. */
-export function fileNameFor(code, language) {
+/** "Prime Numbers.py" / "reverseString" / "fizz-buzz" -> "prime_numbers" / "reverse_string" / "fizz_buzz" */
+export function toFileStem(raw) {
+  return String(raw || "")
+    .replace(/[`"'*]/g, "")
+    .trim()
+    .replace(/\.[a-z0-9+#]{1,6}$/i, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40)
+    .replace(/_+$/, "");
+}
+
+const LANGUAGE_WORDS =
+  /\b(?:in|using|with)\s+(?:python ?3?|java ?script|javascript|java|type ?script|c\s*(?:\+\+|plus plus|sharp|#)|cpp|c|golang|go|rust|ruby|php|perl|swift|kotlin|scala|haskell|lua|r|bash|shell|sql)(?:\s+language)?\b/gi;
+const FILLER =
+  /\b(?:please|can you|could you|i want|i need|write|create|make|generate|give me|build|show me|now|a|an|the|simple|small|program|programme|code|script|function|method|that|which|to|for|of|and|me|it|language)\b/gi;
+
+/** Fallback name from what the user asked for: "write a program to find factorial of 5 in python" -> "find_factorial_5" */
+export function stemFromPrompt(prompt) {
+  const words = String(prompt || "")
+    .replace(LANGUAGE_WORDS, " ")
+    .replace(FILLER, " ")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .slice(0, 4);
+  return toFileStem(words.join("_"));
+}
+
+/** Last resort: a name from the code itself (first function), else "<language>_program". */
+function stemFromCode(code, language) {
+  const fn =
+    code.match(/^\s*def\s+([A-Za-z_]\w*)/m)?.[1] ||
+    code.match(/\bfunction\s+([A-Za-z_$][\w$]*)/)?.[1] ||
+    code.match(/\bfn\s+(?!main\b)([A-Za-z_]\w*)/)?.[1] ||
+    code.match(/\bfunc\s+(?!main\b)([A-Za-z_]\w*)/)?.[1];
+  return toFileStem(fn) || `${language || "code"}_program`;
+}
+
+/**
+ * The exact file name to save as. Java must match its public class name or it
+ * won't compile; everything else uses the descriptive name + correct extension.
+ */
+export function fileNameFor(code, language, stem = "") {
   const { ext } = langInfo(language);
   if (language === "java") {
-    const m = code.match(/public\s+(?:final\s+)?class\s+(\w+)/);
+    const m = code.match(/public\s+(?:final\s+|abstract\s+)?class\s+(\w+)/);
     if (m) return `${m[1]}.java`;
   }
-  return `blindcoder.${ext}`;
+  return `${toFileStem(stem) || stemFromCode(code, language)}.${ext}`;
 }
+
+/** "prime_numbers.py" -> "prime numbers dot py" */
+export const speakFileName = (name) => name.replace(/_/g, " ").replace(/\.(\w+)$/, " dot $1");
