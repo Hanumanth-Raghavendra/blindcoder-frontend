@@ -13,21 +13,50 @@ Live: https://blindcoder.vercel.app · Backend: [blindcoder-backend](https://git
 
 ## Controls
 
-| Keyboard | Touch | Action |
-| --- | --- | --- |
-| Hold `Space` | Hold top pane | Speak |
-| Double tap `Space` | Double tap top pane | Read the code aloud |
-| `↑` / `↓` | — | Read the previous / next line |
-| `Enter` | Tap bottom pane | Run |
-| Double tap `Enter` | Double tap bottom pane | Save the file (Java is saved as `Main.java` so it compiles) |
-| `Esc` | — | Stop speaking; press again to clear |
-| — | Hold bottom pane | Clear |
-| `U` / `F` / `E` / `O` / `R` | — | Undo / fix / explain / read output / repeat |
-| `+` / `-` | — | Speech faster / slower |
-| `M` | — | Switch between the built-in voice and **your own screen reader** (NVDA, JAWS, VoiceOver) |
-| `F1` | — | Help |
+### Laptop / PC
 
-**Spoken commands:** run, read, read output, explain, fix it, undo, save, clear, repeat, faster, slower, stop, help. Anything else is treated as a coding request.
+| Key | Action |
+| --- | --- |
+| Hold `Space` | Speak |
+| Double tap `Space` | Read the code aloud |
+| `↑` / `↓` | Read the previous / next line |
+| `Enter` / `Ctrl+Enter` | Run |
+| Double tap `Enter`, or `Ctrl+S` (works even while typing) | Save the file (Java is saved as `Main.java` so it compiles) |
+| `Shift+S` | Choose a folder to save into without any dialog |
+| `Esc` | Stop speaking; press again to clear. Inside a text box, `Esc` leaves it so shortcuts work again |
+| `U` / `F` / `E` / `O` / `R` | Undo / fix / explain / read output / repeat |
+| `+` / `-` | Speech faster / slower |
+| `M` | Switch between the built-in voice and **your own screen reader** (NVDA, JAWS, VoiceOver) |
+| `F1` | Help |
+
+### Saving files
+
+- Files are named after what the program does, with the exact extension: `prime_numbers.py`, `bubble_sort.cpp`, `fizz_buzz.go`. Java files use the class name (`PrimeNumbers.java`) so they compile as-is. The current name is shown at the top of the editor.
+- **Save without any "Save as" window:** press `Shift+S` once (or click 📁) and choose a folder. Browsers don't allow the Downloads folder itself, so pick or create one inside it, such as `Downloads\BlindCoder`. From then on, double `Enter` / `Ctrl+S` writes straight into that folder. Chrome and Edge on desktop only. Say "use downloads" to switch back.
+- Different code never overwrites an existing file (`prime_numbers_2.py`). Saving identical code twice doesn't create a duplicate. Java updates its file in place, because the name must match the class.
+- Or turn off **"Ask where to save each file before downloading"** in your browser's download settings, and normal saves go straight to Downloads with no window.
+
+### Phone / tablet
+
+| Gesture | Where | Action | Keyboard equivalent |
+| --- | --- | --- | --- |
+| Hold | Code (top) | Speak | Hold `Space` |
+| Double tap | Code | Read all the code | `Space` `Space` |
+| Swipe right / left | Code | Next / previous line | `↓` / `↑` |
+| Tap | Output (bottom) | Run | `Enter` |
+| Double tap | Output | Save | `Enter` `Enter` |
+| Hold | Output | Clear | `Esc` |
+| Swipe right | Output | Read the output | `O` |
+| Swipe left | Output | Undo | `U` |
+| Two-finger tap | Anywhere | Stop speaking | `Esc` |
+
+Success, error and "listening" also **vibrate** on Android.
+
+**VoiceOver / TalkBack users:** screen readers take over touch gestures, so every action is also a labelled button (including Line ◀ ▶, Output, Repeat, Slower, Faster, Stop and Help). Tap **Voice** to switch messages to your screen reader.
+
+### Spoken commands (everywhere)
+
+run · read · read output · explain · fix it · undo · save · clear · repeat · next line · previous line · line 5 · faster · slower · stop · help. Anything else is treated as a coding request.
 
 ## What runs where
 
