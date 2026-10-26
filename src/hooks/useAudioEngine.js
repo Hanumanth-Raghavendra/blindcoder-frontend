@@ -78,18 +78,30 @@ export function useAudioEngine() {
     [initAudio],
   );
 
+  // Vibration where supported (Android). iPhones ignore it; tones still play.
+  const buzz = (pattern) => {
+    try {
+      navigator.vibrate?.(pattern);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const earcons = useMemo(
     () => ({
       success() {
+        buzz(60);
         tone(523, { pan: 1, duration: 0.25 });
         tone(659, { pan: 1, duration: 0.25, delay: 0.13 });
         tone(784, { pan: 1, duration: 0.35, delay: 0.26 });
       },
       error() {
+        buzz([90, 70, 90]);
         tone(400, { pan: -1, duration: 0.3, type: "sawtooth", volume: 0.2 });
         tone(280, { pan: -1, duration: 0.4, type: "sawtooth", volume: 0.2, delay: 0.2 });
       },
       listenStart() {
+        buzz(25);
         tone(660, { duration: 0.08, volume: 0.25 });
         tone(880, { duration: 0.1, volume: 0.25, delay: 0.08 });
       },

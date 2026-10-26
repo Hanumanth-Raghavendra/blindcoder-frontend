@@ -20,7 +20,8 @@ export function useSpeechAPI({ onTranscript, onInterim, onEmpty, onError }) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
     const rec = new SR();
-    rec.continuous = true;
+    // Android Chrome repeats words in continuous mode, so listen per utterance there.
+    rec.continuous = !/Android/i.test(navigator.userAgent);
     rec.interimResults = true;
     rec.lang = SPEECH_LANG;
     rec.maxAlternatives = 1;
