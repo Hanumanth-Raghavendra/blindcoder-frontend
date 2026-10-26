@@ -7,7 +7,7 @@ import { post, warmUp } from "./lib/api";
 import { runCode, preloadPython, pythonStatus } from "./lib/runner";
 import { detectLanguage, fileNameFor, langInfo } from "./lib/language";
 import { codeLines, speakableLine, summarizeOutput } from "./lib/codeSpeech";
-import { matchCommand, HELP_TEXT, TOUCH_HELP_TEXT } from "./lib/voiceCommands";
+import { matchCommand, parseLineCommand, HELP_TEXT, TOUCH_HELP_TEXT } from "./lib/voiceCommands";
 import { TIMEOUTS } from "./config";
 
 const HISTORY_KEY = "blindcoder.history";
@@ -59,6 +59,7 @@ export default function App() {
   const lastEnter = useRef(0);
   const lastEscape = useRef(0);
   const promptInputRef = useRef(null);
+  const pointerFocused = useRef(null); // a button that got focus from a mouse/finger, not from Tab
   const startedRef = useRef(false);
 
   useEffect(() => {
@@ -250,11 +251,14 @@ export default function App() {
   }, [speak]);
 
   const readLine = useCallback(
-    (delta) => {
+    (delta, absolute) => {
       const lines = codeLines(s.current.code);
       if (!s.current.code.trim()) return speak("There's no code.");
-      const next = Math.min(lines.length - 1, Math.max(0, lineIndex.current + delta));
-      const edge = next === lineIndex.current ? (delta > 0 ? "Last line. " : "First line. ") : "";
+      if (absolute !== undefined && absolute > lines.length) return speak(`There are only ${plural(lines.length, "line")}.`);
+      const target = absolute !== undefined ? absolute - 1 : lineIndex.current + delta;
+      const next = Math.min(lines.length - 1, Math.max(0, target));
+      const edge =
+        absolute === undefined && next === lineIndex.current ? (delta > 0 ? "Last line. " : "First line. ") : "";
       lineIndex.current = next;
       speak(`${edge}Line ${next + 1} of ${lines.length}. ${speakableLine(lines[next])}`);
     },
@@ -350,10 +354,13 @@ export default function App() {
     slower: () => changeRate(-0.15),
     voiceOff: () => setVoice(false),
     voiceOn: () => setVoice(true),
+    nextLine: () => readLine(1),
+    prevLine: () => readLine(-1),
+    firstLine: () => readLine(0, 1),
     help,
   };
   const actionsRef = useRef(actions);
-  actionsRef.current = { ...actions, generate, readLine };
+  actionsRef.current = { ...actions, generate, readLine, gotoLine: (n) => readLine(0, n) };
 
   // ---------------------------------------------------------------- voice input
   const voice = useSpeechAPI({
@@ -368,7 +375,8 @@ export default function App() {
       const command = matchCommand(text);
       if (command) {
         setStatus(`Command: ${text}`);
-        actionsRef.current[command]();
+        if (command === "gotoLine") actionsRef.current.gotoLine(parseLineCommand(text));
+        else actionsRef.current[command]();
       } else {
         setPrompt(text);
         actionsRef.current.generate(text);
@@ -405,7 +413,7 @@ export default function App() {
     setStatus(isTouch() ? "Hold the top pane to speak." : "Hold Space to speak.");
     speak(
       isTouch()
-        ? "BlindCoder ready. Top pane: hold to speak, double tap to read. Bottom pane: tap to run, double tap to save, hold to clear. Say help any time."
+        ? "BlindCoder ready. Hold the top pane and speak. Tap the bottom pane to run. Hold the top pane and say help, any time, to hear every gesture."
         : "BlindCoder ready. Hold Space and speak a request. Press Enter to run. Press F1, or say help, to hear all commands.",
     );
   }, [audio, speak]);
@@ -421,18 +429,34 @@ export default function App() {
         return;
       }
       const el = document.activeElement;
-      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-      const onControl = el && (el.tagName === "BUTTON" || el.tagName === "A" || el.tagName === "SELECT");
       const a = actionsRef.current;
+      const mod = (e.ctrlKey || e.metaKey) && !e.altKey;
+
+      // These work everywhere, even while typing in the editor or prompt box.
+      if (mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        return a.save();
+      }
+      if (mod && e.key === "Enter") {
+        e.preventDefault();
+        return a.run();
+      }
+
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      // A button you clicked keeps focus; it shouldn't swallow Enter/Space.
+      // A button reached with Tab (keyboard / screen-reader users) still should.
+      if (el && el === pointerFocused.current && !typing) {
+        el.blur();
+        pointerFocused.current = null;
+      }
+      const focused = document.activeElement;
+      const onControl = focused && /^(BUTTON|A|SELECT|SUMMARY)$/.test(focused.tagName);
 
       if (typing) {
         if (e.key === "Escape") {
           e.preventDefault();
           el.blur();
           speak("Left the text box. Keyboard shortcuts are active.");
-        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && el.tagName === "TEXTAREA") {
-          e.preventDefault();
-          a.run();
         }
         return;
       }
@@ -521,25 +545,38 @@ export default function App() {
       }
     };
 
+    const onPointerDown = (e) => {
+      pointerFocused.current = e.target.closest?.("button, a, select, summary") || null;
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("pointerdown", onPointerDown, true);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("pointerdown", onPointerDown, true);
     };
   }, [audio, speak, start, startListening, voice]);
 
   // ---------------------------------------------------------------- touch
+  // Mirrors the keyboard: hold = Space, swipes = arrow keys / U / O, two fingers = Esc.
   const topGestures = useGestures({
     onDoubleTap: () => actionsRef.current.read(),
     onHoldStart: startListening,
     onHoldEnd: () => voice.stop(),
+    onSwipeRight: () => actionsRef.current.nextLine(),
+    onSwipeLeft: () => actionsRef.current.prevLine(),
+    onTwoFingerTap: () => actionsRef.current.stop(),
     holdMs: 350,
   });
   const bottomGestures = useGestures({
     onTap: () => actionsRef.current.run(),
     onDoubleTap: () => actionsRef.current.save(),
     onHoldStart: () => actionsRef.current.clear(),
+    onSwipeRight: () => actionsRef.current.readOutput(),
+    onSwipeLeft: () => actionsRef.current.undo(),
+    onTwoFingerTap: () => actionsRef.current.stop(),
     holdMs: 800,
   });
 
@@ -572,7 +609,8 @@ export default function App() {
             </span>
             <span className="kb-hint">
               <kbd>Enter</kbd> run · <kbd>Enter</kbd>
-              <kbd>Enter</kbd> save · <kbd>Esc</kbd> stop/clear · <kbd>F1</kbd> help
+              <kbd>Enter</kbd> save (or <kbd>Ctrl</kbd>
+              <kbd>S</kbd>) · <kbd>Esc</kbd> stop/clear · <kbd>F1</kbd> help
             </span>
           </div>
         </header>
@@ -608,6 +646,8 @@ export default function App() {
               id="prompt-section"
               onSubmit={(e) => {
                 e.preventDefault();
+                // Leave the text box so Enter / double Enter / Space work right away.
+                promptInputRef.current?.blur();
                 generate(prompt);
               }}
             >
@@ -701,7 +741,7 @@ export default function App() {
           <button id="btn-fix" type="button" aria-keyshortcuts="F" onClick={fix} disabled={Boolean(busy)}>
             &#128295; Fix
           </button>
-          <button id="btn-save" type="button" onClick={save}>
+          <button id="btn-save" type="button" aria-keyshortcuts="Control+S" onClick={save}>
             &#128190; Save
           </button>
           <button id="btn-undo" type="button" aria-keyshortcuts="U" onClick={undo}>
@@ -710,6 +750,33 @@ export default function App() {
           <button id="btn-clear" type="button" onClick={clear}>
             &#128465; Clear
           </button>
+          {/* Phones/tablets: every keyboard shortcut as a button, for VoiceOver/TalkBack users. */}
+          <div className="touch-controls" role="group" aria-label="More controls">
+            <button type="button" onClick={() => readLine(-1)} aria-label="Previous line">
+              &#9664; Line
+            </button>
+            <button type="button" onClick={() => readLine(1)} aria-label="Next line">
+              Line &#9654;
+            </button>
+            <button type="button" onClick={readOutput}>
+              &#128203; Output
+            </button>
+            <button type="button" onClick={audio.repeatLast}>
+              &#128257; Repeat
+            </button>
+            <button type="button" onClick={() => changeRate(-0.15)} aria-label="Speak slower">
+              &#128034; Slower
+            </button>
+            <button type="button" onClick={() => changeRate(0.15)} aria-label="Speak faster">
+              &#128007; Faster
+            </button>
+            <button type="button" onClick={stopSpeech}>
+              &#9209; Stop
+            </button>
+            <button type="button" onClick={help}>
+              &#10067; Help
+            </button>
+          </div>
           <div id="status-bar">
             <span>{status}</span>
             {meta && <span className="meta">{meta}</span>}

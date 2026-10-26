@@ -13,21 +13,42 @@ Live: https://blindcoder.vercel.app · Backend: [blindcoder-backend](https://git
 
 ## Controls
 
-| Keyboard | Touch | Action |
-| --- | --- | --- |
-| Hold `Space` | Hold top pane | Speak |
-| Double tap `Space` | Double tap top pane | Read the code aloud |
-| `↑` / `↓` | — | Read the previous / next line |
-| `Enter` | Tap bottom pane | Run |
-| Double tap `Enter` | Double tap bottom pane | Save the file (Java is saved as `Main.java` so it compiles) |
-| `Esc` | — | Stop speaking; press again to clear |
-| — | Hold bottom pane | Clear |
-| `U` / `F` / `E` / `O` / `R` | — | Undo / fix / explain / read output / repeat |
-| `+` / `-` | — | Speech faster / slower |
-| `M` | — | Switch between the built-in voice and **your own screen reader** (NVDA, JAWS, VoiceOver) |
-| `F1` | — | Help |
+### Laptop / PC
 
-**Spoken commands:** run, read, read output, explain, fix it, undo, save, clear, repeat, faster, slower, stop, help. Anything else is treated as a coding request.
+| Key | Action |
+| --- | --- |
+| Hold `Space` | Speak |
+| Double tap `Space` | Read the code aloud |
+| `↑` / `↓` | Read the previous / next line |
+| `Enter` / `Ctrl+Enter` | Run |
+| Double tap `Enter`, or `Ctrl+S` (works even while typing) | Save the file (Java is saved as `Main.java` so it compiles) |
+| `Esc` | Stop speaking; press again to clear. Inside a text box, `Esc` leaves it so shortcuts work again |
+| `U` / `F` / `E` / `O` / `R` | Undo / fix / explain / read output / repeat |
+| `+` / `-` | Speech faster / slower |
+| `M` | Switch between the built-in voice and **your own screen reader** (NVDA, JAWS, VoiceOver) |
+| `F1` | Help |
+
+### Phone / tablet
+
+| Gesture | Where | Action | Keyboard equivalent |
+| --- | --- | --- | --- |
+| Hold | Code (top) | Speak | Hold `Space` |
+| Double tap | Code | Read all the code | `Space` `Space` |
+| Swipe right / left | Code | Next / previous line | `↓` / `↑` |
+| Tap | Output (bottom) | Run | `Enter` |
+| Double tap | Output | Save | `Enter` `Enter` |
+| Hold | Output | Clear | `Esc` |
+| Swipe right | Output | Read the output | `O` |
+| Swipe left | Output | Undo | `U` |
+| Two-finger tap | Anywhere | Stop speaking | `Esc` |
+
+Success, error and "listening" also **vibrate** on Android.
+
+**VoiceOver / TalkBack users:** screen readers take over touch gestures, so every action is also a labelled button (including Line ◀ ▶, Output, Repeat, Slower, Faster, Stop and Help). Tap **Voice** to switch messages to your screen reader.
+
+### Spoken commands (everywhere)
+
+run · read · read output · explain · fix it · undo · save · clear · repeat · next line · previous line · line 5 · faster · slower · stop · help. Anything else is treated as a coding request.
 
 ## What runs where
 
