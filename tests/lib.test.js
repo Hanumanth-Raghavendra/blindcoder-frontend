@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchCommand } from "../src/lib/voiceCommands.js";
+import { matchCommand, parseLineCommand } from "../src/lib/voiceCommands.js";
 import { speakableLine, summarizeOutput, indentLevel } from "../src/lib/codeSpeech.js";
 import { detectLanguage, fileNameFor } from "../src/lib/language.js";
 import { cleanPythonError } from "../src/lib/runner.js";
@@ -45,4 +45,15 @@ NameError: name 'y' is not defined`;
   assert.equal(r.message, "NameError: name 'y' is not defined");
   assert.ok(!r.detail.includes("/lib/python"));
   assert.match(cleanPythonError("EOFError: EOF when reading a line").message, /keyboard input/);
+});
+
+test("line navigation commands", () => {
+  assert.equal(matchCommand("next line"), "nextLine");
+  assert.equal(matchCommand("previous line"), "prevLine");
+  assert.equal(matchCommand("go to line 12"), "gotoLine");
+  assert.equal(parseLineCommand("go to line 12"), 12);
+  assert.equal(parseLineCommand("line five"), 5);
+  assert.equal(parseLineCommand("Line 3."), 3);
+  assert.equal(parseLineCommand("write a line of code"), null);
+  assert.equal(matchCommand("print each line of a file"), null);
 });
